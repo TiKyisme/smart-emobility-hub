@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Smart E-Mobility Hub</title>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Software Engineering HK261 · Simulated MVP</p>
+        <h1>Smart E-Mobility Hub</h1>
+        <p class="subtitle">Coordinate shared vehicles, parking, and charging across the VNU-HCM network.</p>
+      </div>
+      <div class="topbar-actions">
+        <button id="toggle-mode" type="button">Use dark mode</button>
+        <button id="simulate-update" type="button">Update simulated state</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="status-strip" aria-live="polite">
+        <div>
+          <span class="live-dot"></span>
+          <strong>Live simulated state</strong>
+          <span id="last-update">Initial simulated state loaded.</span>
+        </div>
+        <button id="toggle-auto-update" class="quiet-button" type="button">Start auto updates</button>
+      </section>
+
+      <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
+
+      <section>
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">Student workspace</p>
+            <h2>Find a resource and complete a journey</h2>
+          </div>
+          <span class="demo-identity">Demo student · no account required</span>
+        </div>
+
+        <div id="hub-grid" class="grid"></div>
+
+        <div class="two-column student-tools">
+          <article class="panel">
+            <div>
+              <h3>Find a suitable vehicle / Hub</h3>
+              <p class="helper">Search uses current availability and battery state.</p>
+            </div>
+            <div class="form-grid">
+              <label>
+                Hub
+                <select id="vehicle-search-hub"></select>
+              </label>
+              <label>
+                Minimum battery
+                <input id="minimum-battery" type="number" min="0" max="100" value="0" />
+              </label>
+              <label>
+                Minimum parking spaces
+                <input id="minimum-parking" type="number" min="0" value="0" />
+              </label>
+              <label class="checkbox-label">
+                <input id="charging-required" type="checkbox" />
+                Charging point required
+              </label>
+            </div>
+            <div id="search-results" class="result-list"></div>
+          </article>
+
+          <article class="panel">
+            <div>
+              <h3>Reserve parking</h3>
+              <p class="helper">A reservation holds one available space against Hub capacity.</p>
+            </div>
+            <label>
+              Selected Hub
+              <select id="parking-hub"></select>
+            </label>
+            <button id="reserve-parking" type="button">Reserve one parking space</button>
+            <div id="parking-status" class="compact-list"></div>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">Student operations</p>
+            <h2>Shared vehicle lifecycle and charging</h2>
+          </div>
+        </div>
+
+        <article class="panel">
+          <div class="panel-heading">
+            <div>
+              <h3>Shared vehicles</h3>
+              <p class="helper">Reserve first, pick up with the active reservation, then return to a Hub with capacity.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Vehicle</th><th>Hub</th><th>Battery</th><th>Status</th><th>Journey action</th></tr>
+              </thead>
+              <tbody id="vehicle-rows"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel charging-panel">
+          <div>
+            <h3>Charging requests</h3>
+            <p class="helper">Shared requests join the queue. A private EV reserves parking and joins the same smart schedule.</p>
+          </div>
+          <div class="form-grid charging-form">
+            <label>
+              Request type
+              <select id="charging-type">
+                <option value="shared">Shared vehicle</option>
+                <option value="private">Private EV</option>
+              </select>
+            </label>
+            <label>
+              Hub
+              <select id="charging-hub"></select>
+            </label>
+            <label id="charging-vehicle-field">
+              Shared vehicle
+              <select id="charging-vehicle"></select>
+            </label>
+            <label id="private-vehicle-field" class="hidden">
+              Private EV label
+              <input id="private-vehicle-label" type="text" value="Private EV 01" maxlength="40" />
+            </label>
+            <label>
+              Battery level
+              <input id="charging-battery" type="number" min="0" max="100" value="35" />
+            </label>
+            <label class="checkbox-label">
+              <input id="upcoming-usage" type="checkbox" />
+              Upcoming usage requirement
+            </label>
+          </div>
+          <div class="button-row">
+            <button id="submit-charging" type="button">Submit charging request</button>
+            <button id="schedule-private" class="secondary-button hidden" type="button">Reserve parking &amp; schedule private EV</button>
+          </div>
+          <div id="charging-queue" class="queue-list"></div>
+        </article>
+      </section>
+
+      <section class="operator-section">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">Operator workspace</p>
+            <h2>Monitor and coordinate the network</h2>
+          </div>
+        </div>
+
+        <div id="operator-metrics" class="metrics-grid"></div>
+
+        <article class="panel">
+          <div class="panel-heading">
+            <div>
+              <h3>Mobility Hub network and capacity risk</h3>
+              <p class="helper">Hubs are ordered by current physical plus reserved parking utilization.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Hub</th><th>Parking</th><th>Vehicles available</th><th>Charging points</th><th>Risk order</th></tr>
+              </thead>
+              <tbody id="operator-hub-rows"></tbody>
+            </table>
+          </div>
+          <div id="redistribution-panel" class="recommendation"></div>
+        </article>
+
+        <div class="two-column operator-tools">
+          <article class="panel">
+            <div>
+              <h3>Vehicle and charging-point incidents</h3>
+              <p class="helper">Mark a vehicle failed or a charging point unavailable to open an operational incident.</p>
+            </div>
+            <div class="form-grid">
+              <label>
+                Vehicle failure
+                <select id="incident-vehicle"></select>
+              </label>
+              <button id="report-vehicle-failure" type="button">Mark vehicle failed</button>
+              <label>
+                Charging point unavailable
+                <select id="incident-charging-point"></select>
+              </label>
+              <button id="report-charging-failure" type="button">Mark point unavailable</button>
+            </div>
+            <div id="incident-list" class="compact-list"></div>
+          </article>
+
+          <article class="panel">
+            <div>
+              <h3>Smart charging schedule</h3>
+              <p class="helper">Priority uses low battery and upcoming usage, with upcoming usage weighted first.</p>
+            </div>
+            <div id="schedule-controls" class="schedule-controls"></div>
+            <div id="operator-schedule" class="queue-list"></div>
+          </article>
+        </div>
+
+        <article class="panel simulation-panel">
+          <div>
+            <h3>What-if simulation</h3>
+            <p class="helper">The scenario starts from the current live state and runs on a copy. Live state is not overwritten.</p>
+          </div>
+          <div class="form-grid">
+            <label>
+              Scenario
+              <select id="scenario"></select>
+            </label>
+            <label>
+              Focus Hub
+              <select id="scenario-hub"></select>
+            </label>
+          </div>
+          <button id="run-simulation" type="button">Run hypothetical scenario</button>
+          <div id="simulation-output" class="simulation-output">Run a scenario to inspect impact and recommendations.</div>
+        </article>
+      </section>
+    </main>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
