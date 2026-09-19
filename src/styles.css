@@ -98,10 +98,13 @@ tr:last-child td { border-bottom: 0; }
 th { color: var(--muted); font-size: .75rem; font-weight: 750; text-transform: uppercase; letter-spacing: .04em; }
 td { font-size: .88rem; }
 .table-note { display: block; color: var(--muted); font-size: .75rem; }
+.reservation-hold { display: grid; gap: .2rem; }
+.reservation-hold small { color: var(--muted); font-size: .72rem; white-space: nowrap; }
 .badge, .risk-pill { display: inline-block; padding: .2rem .48rem; border-radius: 99px; font-size: .72rem; font-weight: 750; text-transform: capitalize; white-space: nowrap; }
 .status-available { color: var(--accent); background: var(--accent-soft); }
 .status-reserved, .status-in_use, .status-charging, .status-scheduled { color: var(--warning); background: var(--warning-soft); }
 .status-failed, .status-unavailable { color: var(--danger); background: var(--danger-soft); }
+.status-expired { color: var(--danger); background: var(--danger-soft); }
 .status-occupied, .status-queued, .status-open { color: var(--muted); background: var(--panel-muted); }
 .battery-value { font-weight: 750; }
 .battery-low { color: var(--danger); }

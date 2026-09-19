@@ -1,4 +1,4 @@
-import { ChargingRequestStatus, VehicleStatus } from "../domain/status.js";
+import { ChargingRequestStatus, ReservationStatus, VehicleStatus } from "../domain/status.js";
 import { buildChargingSchedule } from "../services/chargingService.js";
 import { findSuitableHubs, findSuitableVehicles, listHubSummaries } from "../services/hubService.js";
 import { getCapacityRisks, getNetworkMetrics, suggestRedistribution } from "../services/operatorService.js";
@@ -25,6 +25,11 @@ function formatTime(value) {
   return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+function formatReservationExpiry(value) {
+  if (!value) return "No expiry recorded";
+  return new Date(value).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+}
+
 function priorityScore(request) {
   return (request.upcomingUsage ? 1000 : 0) + (request.battery == null ? 0 : 100 - request.battery);
 }
@@ -44,6 +49,16 @@ function setOptions(id, options, placeholder = null) {
 
 function statusBadge(status) {
   return `<span class="badge status-${escapeHtml(status)}">${escapeHtml(humanize(status))}</span>`;
+}
+
+function latestVehicleReservation(state, vehicleId) {
+  const reservations = state.reservations.filter((item) => item.vehicleId === vehicleId);
+  return reservations[reservations.length - 1] ?? null;
+}
+
+function renderReservationHold(reservation) {
+  if (!reservation) return `<span class="muted">No reservation</span>`;
+  return `<div class="reservation-hold">${statusBadge(reservation.status)}<small>Hold expiry: ${escapeHtml(formatReservationExpiry(reservation.expiresAt))}</small></div>`;
 }
 
 function renderHubCards(state) {
@@ -93,13 +108,16 @@ function renderSearch(state) {
 function renderVehicleRows(state) {
   const hubOptions = state.hubs.map((hub) => ({ value: hub.id, label: hub.name }));
   const rows = state.vehicles.map((vehicle) => {
-    const reservation = state.reservations.find((item) => item.vehicleId === vehicle.id && item.studentId === DEMO_STUDENT_ID);
+    const reservation = latestVehicleReservation(state, vehicle.id);
+    const studentReservation = state.reservations
+      .filter((item) => item.vehicleId === vehicle.id && item.studentId === DEMO_STUDENT_ID)
+      .at(-1);
     let action = `<span class="muted">No action</span>`;
     if (vehicle.status === VehicleStatus.AVAILABLE) {
       action = `<button type="button" data-action="reserve-vehicle" data-vehicle-id="${escapeHtml(vehicle.id)}">Reserve</button>`;
-    } else if (vehicle.status === VehicleStatus.RESERVED && reservation?.status === "active") {
+    } else if (vehicle.status === VehicleStatus.RESERVED && studentReservation?.status === ReservationStatus.ACTIVE) {
       action = `<button type="button" data-action="pickup-vehicle" data-vehicle-id="${escapeHtml(vehicle.id)}">Pick up</button>`;
-    } else if (vehicle.status === VehicleStatus.IN_USE && reservation?.status === "in_use") {
+    } else if (vehicle.status === VehicleStatus.IN_USE && studentReservation?.status === ReservationStatus.IN_USE) {
       action = `
         <div class="inline-action">
           <select aria-label="Return destination for ${escapeHtml(vehicle.id)}">
@@ -114,6 +132,7 @@ function renderVehicleRows(state) {
       <td>${escapeHtml(state.hubs.find((hub) => hub.id === vehicle.hubId)?.name ?? vehicle.hubId)}</td>
       <td><span class="battery-value battery-${vehicle.battery < 30 ? "low" : "ok"}">${vehicle.battery}%</span></td>
       <td>${statusBadge(vehicle.status)}</td>
+      <td>${renderReservationHold(reservation)}</td>
       <td>${action}</td>
     </tr>`;
   });

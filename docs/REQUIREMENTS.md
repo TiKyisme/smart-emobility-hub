@@ -9,7 +9,7 @@ The wording below keeps each requirement focused on one system service/constrain
 - **FR-01 - View Hub state:** The system shall allow a student to view Mobility Hubs and their current resource state.
 - **FR-02 - Find suitable mobility resources:** The system shall allow a student to find a suitable Hub and shared electric vehicle for a journey using current resource state.
 - **FR-03 - View vehicle state:** The system shall allow a student to view vehicle availability and battery level.
-- **FR-04 - Reserve shared vehicle:** The system shall allow a student to reserve an available shared electric vehicle.
+- **FR-04 - Reserve shared vehicle:** The system shall allow a student to reserve an available shared electric vehicle. A successful reservation shall temporarily hold the vehicle for that user; if the hold expires before pickup, the reservation shall become expired and the vehicle shall become available again.
 - **FR-05 - Reserve parking:** The system shall allow a student to reserve an available parking space at a selected Hub.
 - **FR-06 - Pick up shared vehicle:** The system shall allow a student with a valid reservation to pick up the reserved shared vehicle.
 - **FR-07 - Return shared vehicle:** The system shall allow a student to return a shared vehicle to a Hub with available parking capacity.

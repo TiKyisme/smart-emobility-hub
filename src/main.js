@@ -1,7 +1,7 @@
 import { applyChargingSchedule, schedulePrivateEvCharging, submitChargingRequest } from "./services/chargingService.js";
 import { createInitialState } from "./data/simulatedData.js";
 import { coordinateRedistribution, reportChargingPointUnavailable, reportVehicleFailure, suggestRedistribution } from "./services/operatorService.js";
-import { pickUpVehicle, reserveParking, reserveVehicle, returnVehicle } from "./services/reservationService.js";
+import { expireReservations, pickUpVehicle, reserveParking, reserveVehicle, returnVehicle } from "./services/reservationService.js";
 import { runWhatIf } from "./services/simulationService.js";
 import { applySimulatedUpdate } from "./services/simulatorService.js";
 import { createStore } from "./state/store.js";
@@ -9,6 +9,9 @@ import { DEMO_STUDENT_ID, renderApp, renderSimulationResult } from "./ui/render.
 
 const store = createStore(createInitialState());
 let autoUpdateTimer = null;
+
+// Keep active reservation holds current even when the user does not click another action.
+window.setInterval(() => expireReservations(store), 1000);
 
 function showFeedback(message, ok = true) {
   const feedback = document.querySelector("#feedback");

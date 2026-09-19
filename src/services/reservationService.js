@@ -2,17 +2,67 @@ import { ReservationStatus, VehicleStatus } from "../domain/status.js";
 import { summarizeHub } from "./hubService.js";
 
 // Traceability: FR-04..FR-07 / UC-04..UC-07 / AT-04..AT-07.
+// This is an MVP decision, not a lecturer-provided duration.
+export const RESERVATION_HOLD_DURATION_MS = 15 * 60 * 1000;
+
 function createId(prefix) {
   return globalThis.crypto?.randomUUID?.() ?? `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-export function reserveVehicle(store, { studentId, vehicleId }) {
+function toTimestamp(value) {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function hasActiveHold(reservation, now) {
+  const expiresAt = toTimestamp(reservation.expiresAt);
+  return reservation.status === ReservationStatus.ACTIVE && expiresAt !== null && expiresAt > now;
+}
+
+export function expireReservations(store, now = Date.now()) {
+  const timestamp = toTimestamp(now) ?? Date.now();
+  const state = store.getState();
+  const expiringIds = new Set(
+    state.reservations
+      .filter((reservation) => {
+        const expiresAt = toTimestamp(reservation.expiresAt);
+        return reservation.status === ReservationStatus.ACTIVE && expiresAt !== null && expiresAt <= timestamp;
+      })
+      .map((reservation) => reservation.id),
+  );
+
+  if (expiringIds.size === 0) return { ok: true, expired: [] };
+
+  store.update((draft) => {
+    for (const reservation of draft.reservations) {
+      if (!expiringIds.has(reservation.id)) continue;
+      reservation.status = ReservationStatus.EXPIRED;
+      const vehicle = draft.vehicles.find((item) => item.id === reservation.vehicleId);
+      if (vehicle?.status === VehicleStatus.RESERVED) vehicle.status = VehicleStatus.AVAILABLE;
+    }
+  });
+
+  return { ok: true, expired: [...expiringIds] };
+}
+
+export function reserveVehicle(store, { studentId, vehicleId, now = Date.now() }) {
+  const createdAtMs = toTimestamp(now) ?? Date.now();
+  expireReservations(store, createdAtMs);
   const state = store.getState();
   const vehicle = state.vehicles.find((item) => item.id === vehicleId);
   if (!vehicle) return { ok: false, message: "Vehicle not found." };
   if (vehicle.status !== VehicleStatus.AVAILABLE) return { ok: false, message: "Vehicle is not available." };
 
-  const reservation = { id: createId("reservation"), studentId, vehicleId, status: ReservationStatus.ACTIVE };
+  const reservation = {
+    id: createId("reservation"),
+    studentId,
+    vehicleId,
+    status: ReservationStatus.ACTIVE,
+    createdAt: new Date(createdAtMs).toISOString(),
+    expiresAt: new Date(createdAtMs + RESERVATION_HOLD_DURATION_MS).toISOString(),
+  };
   store.update((draft) => {
     const target = draft.vehicles.find((item) => item.id === vehicleId);
     target.status = VehicleStatus.RESERVED;
@@ -34,12 +84,14 @@ export function reserveParking(store, { studentId, hubId, vehicleType = "private
 }
 
 export function pickUpVehicle(store, { studentId, vehicleId }) {
+  const now = Date.now();
+  expireReservations(store, now);
   const state = store.getState();
   const reservation = state.reservations.find(
     (item) =>
       item.studentId === studentId &&
       item.vehicleId === vehicleId &&
-      item.status === ReservationStatus.ACTIVE,
+      hasActiveHold(item, now),
   );
   if (!reservation) return { ok: false, message: "Active reservation required." };
   const vehicle = state.vehicles.find((item) => item.id === vehicleId);

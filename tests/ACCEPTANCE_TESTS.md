@@ -5,10 +5,10 @@ These tests are directly tied to the documented requirements and are intended fo
 - **AT-01 (FR-01):** Open the app and verify all configured Hubs show parking, available vehicle, and charging-point state.
 - **AT-02 (FR-02):** Search/filter for a suitable available vehicle/Hub and verify only matching resources are returned.
 - **AT-03 (FR-03):** Verify each shared vehicle view shows availability/status and battery level.
-- **AT-04 (FR-04):** Reserve an available vehicle; verify it becomes reserved. Repeat for the same vehicle; the second active allocation must fail.
+- **AT-04 (FR-04 / UC-04):** Reserve an available vehicle; verify the reservation records `createdAt` and `expiresAt`, the vehicle becomes `reserved`, and the active hold is visible with its expiry time. Repeat for the same vehicle with a second user; the second active allocation must fail. After the configured hold expires before pickup, verify the reservation becomes `expired` and the vehicle becomes `available` again.
 - **AT-05 (FR-05):** Reserve parking at a Hub with capacity; verify success. Attempt at a full Hub; verify rejection.
-- **AT-06 (FR-06):** Pick up a vehicle with an active reservation; verify status changes to in-use. Attempt without active reservation; verify rejection.
-- **AT-07 (FR-07):** Return an in-use vehicle to a Hub with parking capacity; verify vehicle location/status and parking state update. Attempt at a full Hub; verify rejection.
+- **AT-06 (FR-06):** Pick up a vehicle with an active, non-expired reservation belonging to the selected student; verify status changes to in-use. Attempt pickup with no active reservation, the wrong student, or an expired reservation; verify rejection.
+- **AT-07 (FR-07):** Return an in-use vehicle to a Hub with parking capacity; verify the vehicle location/status and parking state update and the reservation completes normally. Attempt at a full Hub; verify rejection.
 - **AT-08 (FR-08):** Submit a charging request and verify it enters the charging queue.
 - **AT-09 (FR-09):** For a private EV, reserve parking and schedule charging at a selected Hub.
 - **AT-10 (FR-10):** Operator view shows the complete configured Hub network state.

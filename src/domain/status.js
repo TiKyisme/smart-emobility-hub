@@ -17,6 +17,7 @@ export const ReservationStatus = Object.freeze({
   IN_USE: "in_use",
   COMPLETED: "completed",
   CANCELLED: "cancelled",
+  EXPIRED: "expired",
 });
 
 export const ChargingRequestStatus = Object.freeze({
