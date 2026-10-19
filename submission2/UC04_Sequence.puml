@@ -1,0 +1,94 @@
+@startuml UC04_Sequence
+
+title Sequence Diagram - UC-04 Reserve Shared Vehicle
+
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 14
+skinparam dpi 160
+skinparam BoxPadding 8
+skinparam SequenceMessageAlign center
+skinparam ResponseMessageBelowArrow true
+skinparam ArrowColor #222222
+skinparam LifeLineBorderColor #555555
+skinparam ParticipantBorderColor #333333
+skinparam ParticipantBackgroundColor white
+skinparam ActorBorderColor #333333
+skinparam ActorBackgroundColor white
+
+actor "Shared Vehicle User" as User
+boundary "Student UI" as UI
+control "Reservation Service" as RS
+entity "Vehicle" as Vehicle
+entity "Reservation" as Reservation
+
+User -> UI: selectVehicle(vehicleId)
+UI --> User: displayVehicleDetails(hub, status, battery)
+User -> UI: reserveSharedVehicle()
+UI -> RS: reserveVehicle(userId, vehicleId)
+activate RS
+
+RS -> Vehicle: getCurrentStatus(vehicleId)
+activate Vehicle
+Vehicle --> RS: Available
+deactivate Vehicle
+RS -> Vehicle: recheckAvailability(vehicleId)
+
+alt Available and successful
+  activate Vehicle
+  Vehicle --> RS: Available
+  deactivate Vehicle
+  RS -> Reservation: createIfFree(userId, vehicleId, createdAt, expiresAt)
+  activate Reservation
+  Reservation --> RS: ACTIVE(createdAt, expiresAt)
+  deactivate Reservation
+  RS -> Vehicle: changeStatus(Reserved)
+  activate Vehicle
+  Vehicle --> RS: status = Reserved
+  deactivate Vehicle
+  RS --> UI: reservationConfirmed(status, expiresAt)
+  UI --> User: showSuccessAndActiveStatus(expiresAt)
+
+  alt Pickup before expiry - UC-06
+    User -> UI: continueToPickup(vehicleId)
+    UI --> User: openPickUpSharedVehicle()
+  else Hold expires before pickup - A3
+    RS -> Reservation: expireIfActive(expiresAt)
+    activate Reservation
+    Reservation --> RS: status = Expired
+    deactivate Reservation
+    RS -> Vehicle: releaseIfStillReserved()
+    activate Vehicle
+    alt No other operational state prevents release
+      Vehicle --> RS: status = Available
+    else [Vehicle state has changed]
+      Vehicle --> RS: preserve current status
+    end
+    deactivate Vehicle
+    RS --> UI: reservationExpired(status)
+    UI --> User: showExpiredStatus()
+  end
+
+else [Vehicle no longer available - E1]
+  Vehicle --> RS: status != Available
+  RS --> UI: rejectReservation(notAvailable)
+  UI --> User: askChooseAnotherVehicle(A2)
+
+else [Cannot retrieve current state - E2]
+  Vehicle --> RS: stateReadError
+  RS --> UI: rejectReservation(stateUnavailable)
+  UI --> User: showRetryMessage()
+
+else [Concurrent reservation conflict - E3]
+  RS -> Reservation: createIfFree(userId, vehicleId, createdAt, expiresAt)
+  activate Reservation
+  Reservation --> RS: conflict(existing active hold)
+  deactivate Reservation
+  RS --> UI: rejectReservation(conflict)
+  UI --> User: showConflictAndChooseAnother(A2)
+end
+
+deactivate RS
+
+@enduml
