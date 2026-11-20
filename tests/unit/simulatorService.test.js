@@ -1,6 +1,7 @@
 // FR-19 / UC-20 / AT-19, D-004, D-005
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { submitChargingRequest } from "../../src/services/chargingService.js";
 import { summarizeHub } from "../../src/services/hubService.js";
 import { reserveParking } from "../../src/services/reservationService.js";
 import { applySimulatedUpdate, AUTO_UPDATE_INTERVAL_MS } from "../../src/services/simulatorService.js";
@@ -64,6 +65,19 @@ test("simulated charging occupancy is temporary and never frees a real charging 
   assert.equal(point(fresh, "CP-01").status, "occupied");
   for (let i = 0; i < 4; i += 1) applySimulatedUpdate(fresh);
   assert.equal(point(fresh, "CP-01").status, "available", "released on the next charging tick");
+});
+
+test("D-015: when the simulator frees a charger, a waiting request is allocated immediately", () => {
+  const store = freshStore();
+  submitChargingRequest(store, { studentId: "A", hubId: METRO, vehicleId: "EV-02" }); // CP-01
+  for (let i = 0; i < 3; i += 1) applySimulatedUpdate(store); // tick 3 occupies CP-02 (simulated)
+  assert.equal(point(store, "CP-02").simulatedOccupancy, true);
+  assert.equal(submitChargingRequest(store, { studentId: "A", hubId: METRO, vehicleId: "EV-01" }).code, "charging_queued");
+
+  for (let i = 0; i < 4; i += 1) applySimulatedUpdate(store); // tick 7 releases CP-02
+  const request = store.getState().chargingRequests.find((item) => item.vehicleId === "EV-01");
+  assert.equal(request.status, "scheduled");
+  assert.equal(request.chargingPointId, "CP-02");
 });
 
 test("the operational event log keeps the latest eight events, newest first", () => {

@@ -12,6 +12,7 @@ export const ChargingPointStatus = Object.freeze({
   UNAVAILABLE: "unavailable",
 });
 
+// Used for vehicle holds and parking holds.
 export const ReservationStatus = Object.freeze({
   ACTIVE: "active",
   IN_USE: "in_use",
@@ -20,13 +21,17 @@ export const ReservationStatus = Object.freeze({
   EXPIRED: "expired",
 });
 
+// QUEUED = waiting for a charging point; SCHEDULED = assigned to a point and charging.
 export const ChargingRequestStatus = Object.freeze({
   QUEUED: "queued",
   SCHEDULED: "scheduled",
+  COMPLETED: "completed",
+  CANCELLED: "cancelled",
 });
 
 export const IncidentStatus = Object.freeze({
   OPEN: "open",
+  RESOLVED: "resolved",
 });
 
 export const InterfaceMode = Object.freeze({

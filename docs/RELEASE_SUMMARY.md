@@ -1,73 +1,70 @@
-# Release summary — demo readiness (2026-11-20)
+# Release summary — UI redesign and complete flows (2026-11-20)
 
 | Item | Value |
 |---|---|
 | Repository | https://github.com/TiKyisme/smart-emobility-hub (public) |
-| Branch | `release/demo-readiness`, based on `main` @ `e7e068b` (fast-forward, no force push) |
-| Pull request | https://github.com/TiKyisme/smart-emobility-hub/pull/1 — open into `main`, **not merged** (needs the owner's review) |
-| Tested commit | `841246eaeada9162f11b9b27ed4088937ee41c6a` (code and tests unchanged since `bb842eb`); this summary and the test evidence are added by the next commit on the same branch — see `git log -1` |
-| Local `main` | untouched at `04bf4c1` (its UC-04 diagram commit is included on the branch as `75fc30b`) |
+| Branch | `feature/ui-redesign`, based on `main` @ `c15cb0c` (merge of PR #1); normal push, no force |
+| Pull request | https://github.com/TiKyisme/smart-emobility-hub/pull/2 — open into `main`, **not merged** (owner review) |
+| Tested commit | `4b08beb459e979ae0f4268534ee0c23383e17d38`; this summary and the test evidence are added by the next commit on the same branch (`git log -1`) |
+| Previous release | PR #1 (`release/demo-readiness`) merged by the owner as `c15cb0c` |
 
 ## How to run
 
-`python -m http.server 5173 --bind 127.0.0.1` from the repository root, then open http://127.0.0.1:5173/. Full guide: [docs/demo/START_HERE.md](demo/START_HERE.md). Demo script: [docs/demo/DEMO_SCRIPT_8_TO_12_MIN.md](demo/DEMO_SCRIPT_8_TO_12_MIN.md).
+`python -m http.server 5173 --bind 127.0.0.1` from the repository root, then open http://127.0.0.1:5173/. Guide: [docs/demo/START_HERE.md](demo/START_HERE.md). Demo script: [docs/demo/DEMO_SCRIPT_8_TO_12_MIN.md](demo/DEMO_SCRIPT_8_TO_12_MIN.md).
 
 ## Verified
 
 | Check | Result |
 |---|---|
-| `npm test` (47 unit checks, no dependencies) | 47 pass / 0 fail |
-| Browser run, Chrome 157 (`python tests/e2e/browser_acceptance.py`) | 93 PASS / 0 FAIL, incl. 27-step demo-script replay, no console/network errors |
-| Browser run, Edge 157 | 93 PASS / 0 FAIL |
-| Static server on port 5173 | 17/17 assets HTTP 200, JS served as JavaScript |
-| Untracked team files | 152/152 byte-identical before/after (SHA-256) |
+| `npm test` (60 unit checks, no dependencies) | 60 pass / 0 fail |
+| Browser run, Chrome 157 | 101 PASS / 0 FAIL (incl. 25-step demo-script replay, no console/network errors) |
+| Browser run, Edge 157 | 101 PASS / 0 FAIL |
+| Static server on port 5173 | 20/20 assets HTTP 200 |
+| Published PDFs | committed byte-identical to the files on disk |
 
 Evidence and screenshots: [docs/demo/DEMO_EVIDENCE.md](demo/DEMO_EVIDENCE.md).
 
-| Requirement | Status on this branch |
+| Requirement | Status |
 |---|---|
-| FR-01..FR-03 view/search Hubs and vehicles | Verified in browser and unit tests |
-| FR-04 hold + expiry, FR-06 pickup, FR-07 return | Verified (expiry shown live with `?holdSeconds=`) |
-| FR-05 parking within capacity | Verified |
-| FR-08 shared charging request, FR-15 smart schedule | Verified (priority, capacity, eligibility, no duplicates) |
-| FR-09 private EV parking + charging | Verified as two steps (student queues, operator applies schedule). **Time-slot selection from the design is not implemented.** |
-| FR-10..FR-14 monitoring, capacity risk, redistribution, incidents | Verified. No numeric "approaching capacity" threshold (none given by the assignment); incident resolution/maintenance flow is design-only. |
-| FR-16..FR-18 five what-if scenarios with impact and recommendations | Verified; live state proven unchanged. Apply/Save of a scenario is design-only. |
-| FR-19 simulated updates (manual and every 15 s) | Verified |
-| FR-20 interface mode Light/Dark + VI/EN | Verified |
+| FR-01..FR-03 Hub state, search, vehicle availability | Verified (unit + browser) |
+| FR-04, FR-06, FR-07 hold with countdown, cancel, expiry, pickup, return | Verified |
+| FR-05 parking holds within capacity, release | Verified |
+| FR-08, FR-09, FR-15 charging requests with automatic priority allocation, finish, cancel | Verified. Private-EV **time-slot selection** from the design is not implemented. |
+| FR-10..FR-13 KPIs, utilization ranking, redistribution, fleet | Verified. No numeric "approaching capacity" threshold (none in the assignment). |
+| FR-14 incidents: report and resolve (repair/restore) | Verified. Technician assignment from the mockup is design-only. |
+| FR-16..FR-18 five What-if scenarios on a copy | Verified; Save/Apply of a scenario is design-only. |
+| FR-19 simulated updates (manual, every 15 s) | Verified |
+| FR-20 Light/Dark + VI/EN (Vietnamese default) | Verified |
 
-## What changed
+## What changed (on top of PR #1)
 
-1. `75fc30b` UC-04 activity/sequence diagrams (owner's earlier local commit).
-2. `848aecf` fixes: charging eligibility at assignment, duplicate requests, telemetry battery for shared requests, private EV validation, simulator parking vs held capacity, temporary simulated charging occupancy, verified what-if isolation, return-destination reset on re-render, specific feedback, VI/EN, dark-mode contrast.
-3. `bb842eb` tests: `tests/unit` (node:test) and `tests/e2e/browser_acceptance.py` (optional Playwright).
-4. `9612ef2` architecture, decisions D-008..D-013, traceability.
-5. `b3816ba` demo package (`docs/demo`).
-6. `841246e` README encoding repair, targeted `.gitignore`, [release manifest](RELEASE_MANIFEST.md).
+1. `d0c5f4b` — interface redesign (sidebar, six pages, square corners, less text) and complete flows: automatic charging allocation, finish, cancellations, incident resolution, one trip per student, reset data.
+2. `26b2771` — tests: 60 unit checks, 101 browser checks.
+3. `aaf1112` — decisions D-014..D-018, architecture, traceability, demo package, screenshots, README.
+4. `4b08beb` — published reports `submission2/Phase2_L03_13.pdf` and `submission3/L03_13 (1).pdf` (team approval), release manifest.
 
-## Open decisions and risks (team)
+## Open items
 
-1. **Publishing reports:** Submission #2/#3 PDFs and TeX contain the five members' student IDs; the repository is public. They are kept locally and not published ([manifest](RELEASE_MANIFEST.md) section 7 has the exact commands if the team agrees).
-2. **Canonical Submission #3 PDF:** `submission3/L03_13.pdf` page 7 shows black blocks; `L03_13 (1).pdf` has identical text and a readable page 7. Confirm which file was submitted to the LMS (not verifiable from the repository).
-3. **Human rehearsal:** the browser run replays the script automatically, but the team should rehearse once on the presentation laptop and projector ([checklist](demo/DEMO_CHECKLIST.md)).
-4. Design items not implemented (state them honestly if asked): private-EV time slots, incident resolution, charging completion, scenario Apply/Save, multi-user server, persistence.
-5. Rule change to mention if asked: shared-vehicle charging priority now uses the recorded battery (D-008), so typed battery values no longer affect shared requests.
+1. Review and merge PR #2; rehearse once on the presentation laptop with [the checklist](demo/DEMO_CHECKLIST.md).
+2. `submission3/L03_13.pdf` (broken page 7) was deleted by the owner on 2026-11-20 07:39 (Recycle Bin); an identical copy stays at `submission3/report_builder/out/L03_13.pdf`.
+3. Not published (by choice, see [manifest](RELEASE_MANIFEST.md)): report sources, teammates' diagram files, mockups, archives.
+4. Design-only items to mention if asked: time slots, technician assignment, What-if Save/Apply, multi-user server, persistence.
 
 ## Next steps for a teammate
 
 ```powershell
 git fetch origin
-git switch release/demo-readiness       # or open PR #1 on GitHub
-npm test                                # expect 47 pass
+git switch feature/ui-redesign      # or main after PR #2 is merged
+npm test                            # expect 60 pass
 python -m http.server 5173 --bind 127.0.0.1
 ```
 
-After the owner merges PR #1 on GitHub, the owner's local `main` (`04bf4c1`) has diverged from `origin/main`. A non-destructive way to align it:
+The owner's local `main` still points at `04bf4c1`. After merging, a non-destructive way to align it:
 
 ```powershell
 git fetch origin
-git branch -m main old-main-04bf4c1     # keeps the old commit; nothing is deleted
+git branch -m main old-main-04bf4c1
 git switch -c main --track origin/main
 ```
 
-Never use `git add .` in this folder: `submission2/` and `submission3/` hold unpublished reports; stage exact paths only.
+Never use `git add .` in this folder: `submission2/` and `submission3/` still hold unpublished files; stage exact paths only.

@@ -31,10 +31,13 @@ export function listHubSummaries(state) {
   return state.hubs.map((hub) => summarizeHub(state, hub.id));
 }
 
-export function findSuitableVehicles(state, { hubId = null, minimumBattery = 0 } = {}) {
+// FR-02: suitable = available with enough battery. `includeUnavailable` lists every vehicle
+// (with its status) for FR-03 "view availability", still filtered by Hub and battery.
+export function findSuitableVehicles(state, { hubId = null, minimumBattery = 0, includeUnavailable = false } = {}) {
   return state.vehicles.filter((vehicle) => {
     const matchesHub = !hubId || vehicle.hubId === hubId;
-    return matchesHub && vehicle.status === VehicleStatus.AVAILABLE && vehicle.battery >= minimumBattery;
+    const usable = includeUnavailable || vehicle.status === VehicleStatus.AVAILABLE;
+    return matchesHub && usable && vehicle.battery >= minimumBattery;
   });
 }
 

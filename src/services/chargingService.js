@@ -1,9 +1,11 @@
-import { createId } from "../domain/ids.js";
+import { nextId } from "../domain/ids.js";
 import { failure, success } from "../domain/result.js";
 import { ChargingPointStatus, ChargingRequestStatus, ReservationStatus, VehicleStatus } from "../domain/status.js";
 import { summarizeHub } from "./hubService.js";
 
 // Traceability: FR-08, FR-09, FR-15 / UC-08, UC-09, UC-16 / AT-08, AT-09, AT-15.
+// D-015: charging points are allocated automatically by priority whenever a request arrives or
+// capacity/eligibility changes (Submission #3, ADR-05: automatic priority scheduling).
 export const PRIVATE_LABEL_MAX_LENGTH = 40;
 
 const OPEN_REQUEST_STATUSES = [ChargingRequestStatus.QUEUED, ChargingRequestStatus.SCHEDULED];
@@ -15,25 +17,9 @@ function parseBattery(battery) {
 }
 
 export function priorityScore(request) {
-  // FR-15: the only assignment-supported scheduling factors are low battery
-  // and upcoming usage; upcoming usage is treated as the stronger signal.
+  // FR-15: the only assignment-supported scheduling factors are low battery and upcoming usage;
+  // upcoming usage is treated as the stronger signal. Equal scores keep arrival order.
   return (request.upcomingUsage ? 1000 : 0) + (request.battery == null ? 0 : 100 - request.battery);
-}
-
-function createRequest(request) {
-  return {
-    id: createId("charging"),
-    status: ChargingRequestStatus.QUEUED,
-    source: request.source ?? "shared",
-    studentId: request.studentId,
-    hubId: request.hubId,
-    vehicleId: request.vehicleId ?? null,
-    vehicleLabel: request.vehicleLabel ?? request.vehicleId ?? "Private EV",
-    battery: request.battery,
-    upcomingUsage: Boolean(request.upcomingUsage),
-    chargingPointId: null,
-    createdAt: new Date().toISOString(),
-  };
 }
 
 function hasOpenRequest(state, vehicleId) {
@@ -42,9 +28,9 @@ function hasOpenRequest(state, vehicleId) {
   );
 }
 
-// A queued shared-vehicle request may only receive a charging point while the vehicle is
-// still available at the requested Hub. Private EV requests already hold a parking space.
-function assignmentBlocker(state, request) {
+// A queued shared-vehicle request may only receive a point while its vehicle is available at the
+// requested Hub (D-009). Private EV requests already hold a parking space and are always eligible.
+export function assignmentBlocker(state, request) {
   if (!request.vehicleId) return null;
   const vehicle = state.vehicles.find((item) => item.id === request.vehicleId);
   if (!vehicle) return "vehicle_missing";
@@ -53,48 +39,11 @@ function assignmentBlocker(state, request) {
   return null;
 }
 
-export function submitChargingRequest(store, request = {}) {
-  if (!request.studentId) return failure("student_required", "A student identity is required.");
-  if (!request.vehicleId) return failure("vehicle_required", "Select a shared vehicle for the charging request.");
-  const state = store.getState();
-  const vehicle = state.vehicles.find((item) => item.id === request.vehicleId);
-  const vehicleId = request.vehicleId;
-  if (!vehicle) return failure("vehicle_not_found", "Vehicle not found.", { vehicleId });
-  if (vehicle.status === VehicleStatus.FAILED) {
-    return failure("charging_vehicle_failed", "A failed vehicle cannot enter the charging queue.", { vehicleId });
-  }
-  if ([VehicleStatus.RESERVED, VehicleStatus.IN_USE].includes(vehicle.status)) {
-    return failure("charging_vehicle_busy", `${vehicleId} is reserved or in use and cannot be scheduled for charging yet.`, { vehicleId });
-  }
-  if (vehicle.status === VehicleStatus.CHARGING) {
-    return failure("charging_vehicle_charging", `${vehicleId} is already charging.`, { vehicleId });
-  }
-  if (hasOpenRequest(state, vehicleId)) {
-    return failure("charging_duplicate", `${vehicleId} already has a charging request in the queue.`, { vehicleId });
-  }
-  if (request.hubId && request.hubId !== vehicle.hubId) {
-    return failure("charging_hub_mismatch", "The selected Hub does not contain this vehicle.", { vehicleId });
-  }
-  const hub = state.hubs.find((item) => item.id === vehicle.hubId);
-  if (!hub) return failure("hub_not_found", "Hub not found.");
-
-  // Shared vehicles: battery level and upcoming usage come from the recorded vehicle state,
-  // so the priority is computed from system data rather than from typed input.
-  const created = createRequest({
-    studentId: request.studentId,
-    source: "shared",
-    hubId: hub.id,
-    vehicleId,
-    vehicleLabel: vehicleId,
-    battery: vehicle.battery,
-    upcomingUsage: Boolean(request.upcomingUsage) || Boolean(vehicle.upcomingUsage),
-  });
-  store.update((draft) => draft.chargingRequests.push(created));
-  const freePoints = summarizeHub(store.getState(), hub.id)?.availableChargingPoints ?? 0;
-  const params = { label: created.vehicleLabel, hubName: hub.name };
-  return freePoints > 0
-    ? success("charging_queued", `Charging request for ${vehicleId} added to the queue at ${hub.name}.`, params, { request: created })
-    : success("charging_queued_no_point", `Charging request for ${vehicleId} queued; no charging point is free at ${hub.name}.`, params, { request: created });
+// Vehicles a student can submit a shared charging request for at a Hub (FR-08).
+export function listChargeableVehicles(state, hubId) {
+  return state.vehicles.filter(
+    (vehicle) => vehicle.hubId === hubId && vehicle.status === VehicleStatus.AVAILABLE && !hasOpenRequest(state, vehicle.id),
+  );
 }
 
 export function buildChargingSchedule(state, hubId) {
@@ -141,41 +90,96 @@ export function buildChargingSchedule(state, hubId) {
   };
 }
 
-export function applyChargingSchedule(store, hubId) {
-  const state = store.getState();
-  const hub = state.hubs.find((item) => item.id === hubId);
-  if (!hub) {
-    return { ...failure("hub_not_found", "Hub not found.", { hubId }), scheduled: [], waiting: [], blocked: [], assigned: [] };
-  }
-  const plan = buildChargingSchedule(state, hubId);
-  const planned = plan.scheduled.filter(
-    (item) => item.status === ChargingRequestStatus.QUEUED && item.chargingPointId,
-  );
-
+// Assigns free points to the highest-priority eligible requests. Works on any state object:
+// the live draft inside store.update or a What-if copy. Returns the new assignments.
+export function allocateChargingPoints(state, hubIds = state.hubs.map((hub) => hub.id)) {
   const assigned = [];
-  if (planned.length > 0) {
-    store.update((draft) => {
-      for (const assignment of planned) {
-        const request = draft.chargingRequests.find((item) => item.id === assignment.id);
-        const point = draft.chargingPoints.find((item) => item.id === assignment.chargingPointId);
-        if (request?.status !== ChargingRequestStatus.QUEUED || point?.status !== ChargingPointStatus.AVAILABLE) continue;
-        if (assignmentBlocker(draft, request)) continue;
-        request.status = ChargingRequestStatus.SCHEDULED;
-        request.chargingPointId = point.id;
-        point.status = ChargingPointStatus.OCCUPIED;
-        const vehicle = request.vehicleId ? draft.vehicles.find((item) => item.id === request.vehicleId) : null;
-        if (vehicle) vehicle.status = VehicleStatus.CHARGING;
-        assigned.push({ requestId: request.id, chargingPointId: point.id, vehicleLabel: request.vehicleLabel });
-      }
-    });
+  for (const hubId of hubIds) {
+    const plan = buildChargingSchedule(state, hubId);
+    for (const item of plan.scheduled.filter((entry) => entry.status === ChargingRequestStatus.QUEUED)) {
+      const request = state.chargingRequests.find((entry) => entry.id === item.id);
+      const point = state.chargingPoints.find((entry) => entry.id === item.chargingPointId);
+      if (request?.status !== ChargingRequestStatus.QUEUED || point?.status !== ChargingPointStatus.AVAILABLE) continue;
+      if (assignmentBlocker(state, request)) continue;
+      request.status = ChargingRequestStatus.SCHEDULED;
+      request.chargingPointId = point.id;
+      point.status = ChargingPointStatus.OCCUPIED;
+      delete point.simulatedOccupancy;
+      const vehicle = request.vehicleId ? state.vehicles.find((entry) => entry.id === request.vehicleId) : null;
+      if (vehicle) vehicle.status = VehicleStatus.CHARGING;
+      assigned.push({ requestId: request.id, chargingPointId: point.id, vehicleLabel: request.vehicleLabel, hubId });
+    }
   }
+  return assigned;
+}
 
-  const after = buildChargingSchedule(store.getState(), hubId);
-  const params = { hubName: hub.name, assigned: assigned.length, waiting: after.waiting.length, blocked: after.blocked.length };
-  const result = assigned.length > 0
-    ? success("schedule_applied", `Charging schedule applied at ${hub.name}: ${assigned.length} newly assigned, ${after.waiting.length} waiting, ${after.blocked.length} on hold.`, params)
-    : success("schedule_nothing", `No queued charging request can be assigned at ${hub.name} now.`, params);
-  return { ...result, ...after, assigned };
+export function queuePosition(state, request) {
+  return buildChargingSchedule(state, request.hubId).waiting.findIndex((item) => item.id === request.id) + 1;
+}
+
+function createRequest(state, request) {
+  return {
+    id: nextId("CHG", state.chargingRequests),
+    status: ChargingRequestStatus.QUEUED,
+    source: request.source,
+    studentId: request.studentId,
+    hubId: request.hubId,
+    vehicleId: request.vehicleId ?? null,
+    vehicleLabel: request.vehicleLabel,
+    battery: request.battery,
+    upcomingUsage: Boolean(request.upcomingUsage),
+    chargingPointId: null,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+export function submitChargingRequest(store, request = {}) {
+  if (!request.studentId) return failure("student_required", "A student identity is required.");
+  if (!request.vehicleId) return failure("vehicle_required", "Select a shared vehicle for the charging request.");
+  const state = store.getState();
+  const vehicle = state.vehicles.find((item) => item.id === request.vehicleId);
+  const vehicleId = request.vehicleId;
+  if (!vehicle) return failure("vehicle_not_found", "Vehicle not found.", { vehicleId });
+  if (vehicle.status === VehicleStatus.FAILED) {
+    return failure("charging_vehicle_failed", "A failed vehicle cannot enter the charging queue.", { vehicleId });
+  }
+  if ([VehicleStatus.RESERVED, VehicleStatus.IN_USE].includes(vehicle.status)) {
+    return failure("charging_vehicle_busy", `${vehicleId} is reserved or in use and cannot be scheduled for charging yet.`, { vehicleId });
+  }
+  if (vehicle.status === VehicleStatus.CHARGING) {
+    return failure("charging_vehicle_charging", `${vehicleId} is already charging.`, { vehicleId });
+  }
+  if (hasOpenRequest(state, vehicleId)) {
+    return failure("charging_duplicate", `${vehicleId} already has a charging request in the queue.`, { vehicleId });
+  }
+  if (request.hubId && request.hubId !== vehicle.hubId) {
+    return failure("charging_hub_mismatch", "The selected Hub does not contain this vehicle.", { vehicleId });
+  }
+  const hub = state.hubs.find((item) => item.id === vehicle.hubId);
+  if (!hub) return failure("hub_not_found", "Hub not found.");
+
+  // D-008: shared vehicles use the recorded battery level and upcoming-usage flag.
+  const created = createRequest(state, {
+    studentId: request.studentId,
+    source: "shared",
+    hubId: hub.id,
+    vehicleId,
+    vehicleLabel: vehicleId,
+    battery: vehicle.battery,
+    upcomingUsage: Boolean(request.upcomingUsage) || Boolean(vehicle.upcomingUsage),
+  });
+  store.update((draft) => {
+    draft.chargingRequests.push(created);
+    allocateChargingPoints(draft, [hub.id]);
+  });
+
+  const saved = store.getState().chargingRequests.find((item) => item.id === created.id);
+  const params = { label: vehicleId, hubName: hub.name };
+  if (saved.status === ChargingRequestStatus.SCHEDULED) {
+    return success("charging_started", `${vehicleId} is charging at ${saved.chargingPointId}.`, { ...params, pointId: saved.chargingPointId }, { request: saved });
+  }
+  const position = queuePosition(store.getState(), saved);
+  return success("charging_queued", `${vehicleId} is waiting for a charging point at ${hub.name} (position ${position}).`, { ...params, position }, { request: saved });
 }
 
 export function schedulePrivateEvCharging(store, request = {}) {
@@ -184,7 +188,7 @@ export function schedulePrivateEvCharging(store, request = {}) {
   const hub = state.hubs.find((item) => item.id === request.hubId);
   if (!hub) return failure("hub_not_found", "Hub not found.");
   const label = String(request.vehicleLabel ?? "").trim();
-  if (!label) return failure("private_label_required", "Enter a label for the private EV.");
+  if (!label) return failure("private_label_required", "Enter a plate or label for the private EV.");
   if (label.length > PRIVATE_LABEL_MAX_LENGTH) {
     return failure("private_label_too_long", `The private EV label must be at most ${PRIVATE_LABEL_MAX_LENGTH} characters.`, { max: PRIVATE_LABEL_MAX_LENGTH });
   }
@@ -195,15 +199,7 @@ export function schedulePrivateEvCharging(store, request = {}) {
     return failure("private_parking_full", `No parking capacity available for the private EV at ${hub.name}.`, { hubName: hub.name });
   }
 
-  const parkingReservation = {
-    id: createId("parking"),
-    studentId: request.studentId,
-    hubId: hub.id,
-    vehicleType: "private",
-    status: ReservationStatus.ACTIVE,
-    linkedChargingRequest: null,
-  };
-  const chargingRequest = createRequest({
+  const chargingRequest = createRequest(state, {
     studentId: request.studentId,
     source: "private",
     hubId: hub.id,
@@ -212,17 +208,86 @@ export function schedulePrivateEvCharging(store, request = {}) {
     battery,
     upcomingUsage: request.upcomingUsage,
   });
-  parkingReservation.linkedChargingRequest = chargingRequest.id;
+  const parkingReservation = {
+    id: nextId("PRK", state.parkingReservations),
+    studentId: request.studentId,
+    hubId: hub.id,
+    vehicleType: "private",
+    status: ReservationStatus.ACTIVE,
+    linkedChargingRequest: chargingRequest.id,
+    createdAt: chargingRequest.createdAt,
+  };
 
   store.update((draft) => {
     draft.parkingReservations.push(parkingReservation);
     draft.chargingRequests.push(chargingRequest);
+    allocateChargingPoints(draft, [hub.id]);
   });
 
-  return success(
-    "private_scheduled",
-    `Parking held at ${hub.name} and charging request for ${label} queued.`,
-    { hubName: hub.name, label },
-    { parkingReservation, request: chargingRequest },
+  const saved = store.getState().chargingRequests.find((item) => item.id === chargingRequest.id);
+  const params = { label, hubName: hub.name };
+  const data = { parkingReservation, request: saved };
+  if (saved.status === ChargingRequestStatus.SCHEDULED) {
+    return success("private_started", `Parking held at ${hub.name}; ${label} is charging at ${saved.chargingPointId}.`, { ...params, pointId: saved.chargingPointId }, data);
+  }
+  const position = queuePosition(store.getState(), saved);
+  return success("private_queued", `Parking held at ${hub.name}; ${label} is waiting for a charging point (position ${position}).`, { ...params, position }, data);
+}
+
+// Operator action: the session on a point ends, the point is freed and handed to the next request.
+export function finishCharging(store, chargingPointId) {
+  const state = store.getState();
+  const point = state.chargingPoints.find((item) => item.id === chargingPointId);
+  if (!point) return failure("point_not_found", "Charging point not found.", { pointId: chargingPointId });
+  const session = state.chargingRequests.find(
+    (item) => item.status === ChargingRequestStatus.SCHEDULED && item.chargingPointId === chargingPointId,
   );
+  if (!session) return failure("point_not_charging", `No charging session is running on ${chargingPointId}.`, { pointId: chargingPointId });
+
+  let next = [];
+  store.update((draft) => {
+    const request = draft.chargingRequests.find((item) => item.id === session.id);
+    request.status = ChargingRequestStatus.COMPLETED;
+    request.completedAt = new Date().toISOString();
+    const target = draft.chargingPoints.find((item) => item.id === chargingPointId);
+    target.status = ChargingPointStatus.AVAILABLE;
+    if (request.vehicleId) {
+      const vehicle = draft.vehicles.find((item) => item.id === request.vehicleId);
+      if (vehicle) {
+        vehicle.battery = 100;
+        if (vehicle.status === VehicleStatus.CHARGING) vehicle.status = VehicleStatus.AVAILABLE;
+      }
+    } else {
+      // A charged private EV leaves, which releases its parking hold.
+      const parking = draft.parkingReservations.find(
+        (item) => item.linkedChargingRequest === request.id && item.status === ReservationStatus.ACTIVE,
+      );
+      if (parking) parking.status = ReservationStatus.COMPLETED;
+    }
+    next = allocateChargingPoints(draft, [target.hubId]);
+  });
+
+  const params = { label: session.vehicleLabel, pointId: chargingPointId };
+  const following = next.find((item) => item.chargingPointId === chargingPointId);
+  return following
+    ? success("charging_finished_next", `${session.vehicleLabel} finished charging; ${following.vehicleLabel} now charges at ${chargingPointId}.`, { ...params, nextLabel: following.vehicleLabel })
+    : success("charging_finished", `${session.vehicleLabel} finished charging at ${chargingPointId}.`, params);
+}
+
+// Student action: withdraw a request that is still waiting; a private EV also releases its space.
+export function cancelChargingRequest(store, { studentId, requestId } = {}) {
+  const state = store.getState();
+  const request = state.chargingRequests.find((item) => item.id === requestId && item.studentId === studentId);
+  if (!request) return failure("request_not_found", "Charging request not found.", { requestId });
+  if (request.status !== ChargingRequestStatus.QUEUED) {
+    return failure("charging_cancel_not_allowed", "Only a waiting request can be cancelled.", { label: request.vehicleLabel });
+  }
+  store.update((draft) => {
+    draft.chargingRequests.find((item) => item.id === requestId).status = ChargingRequestStatus.CANCELLED;
+    const parking = draft.parkingReservations.find(
+      (item) => item.linkedChargingRequest === requestId && item.status === ReservationStatus.ACTIVE,
+    );
+    if (parking) parking.status = ReservationStatus.CANCELLED;
+  });
+  return success("charging_cancelled", `Charging request for ${request.vehicleLabel} cancelled.`, { label: request.vehicleLabel });
 }

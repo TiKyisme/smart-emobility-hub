@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="vi">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -8,251 +8,190 @@
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
-    <header class="topbar">
-      <div>
-        <p class="eyebrow" data-i18n="app.eyebrow">Software Engineering HK261 · Simulated MVP</p>
-        <h1>Smart E-Mobility Hub</h1>
-        <p class="subtitle" data-i18n="app.subtitle">Coordinate shared vehicles, parking, and charging across the VNU-HCM network.</p>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-name">Smart E-Mobility Hub</span>
+          <span class="brand-sub" data-i18n="app.area">Khu đô thị ĐHQG-HCM</span>
+        </div>
+        <nav class="nav" aria-label="Main">
+          <p class="nav-group" data-i18n="nav.groupStudent">Cổng sinh viên</p>
+          <a class="nav-link" href="#find" data-page="find" data-i18n="nav.find">Tìm & đặt xe</a>
+          <a class="nav-link" href="#services" data-page="services" data-i18n="nav.services">Đỗ xe & sạc</a>
+          <p class="nav-group" data-i18n="nav.groupOperator">Cổng vận hành</p>
+          <a class="nav-link" href="#network" data-page="network" data-i18n="nav.network">Giám sát mạng lưới</a>
+          <a class="nav-link" href="#charging" data-page="charging" data-i18n="nav.charging">Sạc thông minh</a>
+          <a class="nav-link" href="#incidents" data-page="incidents" data-i18n="nav.incidents">Sự cố</a>
+          <a class="nav-link" href="#whatif" data-page="whatif" data-i18n="nav.whatif">Mô phỏng What-if</a>
+        </nav>
+        <div class="sidebar-footer">
+          <button id="reset-data" type="button" class="btn btn-ghost" data-i18n="action.reset">Đặt lại dữ liệu</button>
+          <span class="sidebar-note">CO3001 · HK261 · L03 · 13</span>
+        </div>
+      </aside>
+
+      <div class="workspace">
+        <header class="topbar">
+          <div class="page-heading">
+            <span id="page-portal" class="crumb">Cổng sinh viên</span>
+            <h1 id="page-title">Tìm & đặt xe</h1>
+          </div>
+          <div class="topbar-actions">
+            <button id="simulate-update" type="button" class="btn btn-secondary" data-i18n="top.update">Cập nhật dữ liệu</button>
+            <button id="toggle-auto-update" type="button" class="btn btn-secondary">Tự động: tắt</button>
+            <button id="toggle-mode" type="button" class="btn btn-secondary">Chế độ tối</button>
+            <select id="language-select" class="lang-select" aria-label="Ngôn ngữ giao diện" data-i18n-aria-label="top.language">
+              <option value="vi">VI</option>
+              <option value="en">EN</option>
+            </select>
+            <span id="user-chip" class="user-chip">STUDENT-DEMO</span>
+          </div>
+        </header>
+
+        <div class="statusline" aria-live="polite">
+          <span class="live-mark" aria-hidden="true"></span>
+          <span class="statusline-label" data-i18n="status.live">Dữ liệu mô phỏng</span>
+          <span id="last-update">Đã nạp trạng thái mô phỏng ban đầu.</span>
+        </div>
+
+        <main id="main" tabindex="-1">
+          <!-- Student portal: Find & reserve (FR-01..FR-04, FR-06, FR-07) -->
+          <section id="page-find" class="page" data-page="find">
+            <div id="hub-tiles" class="tiles"></div>
+            <div class="layout-main-side">
+              <article class="card">
+                <header class="card-header"><h2 data-i18n="find.title">Phương tiện</h2></header>
+                <div class="filters">
+                  <label class="field"><span data-i18n="find.hub">Hub</span><select id="vehicle-search-hub"></select></label>
+                  <label class="field field-narrow"><span data-i18n="find.minBattery">Pin tối thiểu (%)</span><input id="minimum-battery" type="number" min="0" max="100" step="5" value="0" /></label>
+                  <div class="filter-checks">
+                    <label class="check"><input id="only-available" type="checkbox" checked /><span data-i18n="find.onlyAvailable">Chỉ xe sẵn sàng</span></label>
+                    <label class="check"><input id="charging-required" type="checkbox" /><span data-i18n="find.freeCharger">Có trụ trống</span></label>
+                    <label class="check"><input id="parking-required" type="checkbox" /><span data-i18n="find.freeParking">Còn chỗ đỗ</span></label>
+                  </div>
+                </div>
+                <div id="search-results" class="card-body flush"></div>
+              </article>
+              <article class="card">
+                <header class="card-header"><h2 data-i18n="trip.title">Chuyến đi của tôi</h2></header>
+                <div id="my-trip" class="card-body"></div>
+                <p id="hold-duration" class="card-foot"></p>
+              </article>
+            </div>
+          </section>
+
+          <!-- Student portal: Parking & charging (FR-05, FR-08, FR-09) -->
+          <section id="page-services" class="page" data-page="services" hidden>
+            <div class="layout-two">
+              <article class="card">
+                <header class="card-header"><h2 data-i18n="parking.title">Giữ chỗ đỗ xe</h2></header>
+                <div class="card-body">
+                  <div class="form-row">
+                    <label class="field"><span data-i18n="parking.hub">Hub</span><select id="parking-hub"></select></label>
+                    <button id="reserve-parking" type="button" class="btn" data-i18n="parking.reserve">Giữ chỗ</button>
+                  </div>
+                  <h3 data-i18n="parking.mine">Chỗ đỗ đang giữ</h3>
+                  <div id="my-parking"></div>
+                </div>
+              </article>
+              <article class="card">
+                <header class="card-header">
+                  <h2 data-i18n="charging.title">Yêu cầu sạc</h2>
+                  <div class="segmented" role="group">
+                    <button type="button" data-charging-type="shared" data-i18n="charging.shared">Xe dùng chung</button>
+                    <button type="button" data-charging-type="private" data-i18n="charging.private">Xe cá nhân</button>
+                  </div>
+                </header>
+                <div class="card-body">
+                  <div class="form-grid">
+                    <label class="field"><span data-i18n="charging.hub">Hub</span><select id="charging-hub"></select></label>
+                    <label id="charging-vehicle-field" class="field"><span data-i18n="charging.vehicle">Xe</span><select id="charging-vehicle"></select></label>
+                    <label id="private-label-field" class="field" hidden><span data-i18n="charging.label">Biển số / tên xe</span><input id="private-vehicle-label" type="text" maxlength="40" value="59A-123.45" /></label>
+                    <label id="private-battery-field" class="field" hidden><span data-i18n="charging.battery">Pin hiện tại (%)</span><input id="charging-battery" type="number" min="0" max="100" value="35" /></label>
+                    <label class="check"><input id="upcoming-usage" type="checkbox" /><span data-i18n="charging.upcoming">Cần dùng sớm</span></label>
+                  </div>
+                  <div class="form-row">
+                    <button id="submit-charging" type="button" class="btn">Gửi yêu cầu sạc</button>
+                    <span id="charging-hint" class="muted"></span>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <article class="card">
+              <header class="card-header"><h2 data-i18n="charging.mine">Yêu cầu sạc của tôi</h2></header>
+              <div id="my-charging" class="card-body flush"></div>
+            </article>
+          </section>
+
+          <!-- Operator portal: Network monitor (FR-10..FR-13) -->
+          <section id="page-network" class="page" data-page="network" hidden>
+            <div id="operator-metrics" class="kpis"></div>
+            <article class="card">
+              <header class="card-header"><h2 data-i18n="network.title">Mạng lưới Hub</h2><span class="muted" data-i18n="network.rule">Xếp theo mức sử dụng chỗ đỗ (đang đỗ + đang giữ)</span></header>
+              <div id="network-table" class="card-body flush"></div>
+            </article>
+            <div class="layout-side-main">
+              <article class="card">
+                <header class="card-header"><h2 data-i18n="redistribution.title">Điều phối xe</h2></header>
+                <div id="redistribution-panel" class="card-body"></div>
+              </article>
+              <article class="card">
+                <header class="card-header"><h2 data-i18n="fleet.title">Đội xe</h2></header>
+                <div id="fleet-table" class="card-body flush"></div>
+              </article>
+            </div>
+          </section>
+
+          <!-- Operator portal: Smart charging (FR-15) -->
+          <section id="page-charging" class="page" data-page="charging" hidden>
+            <article class="card">
+              <header class="card-header"><h2 data-i18n="points.title">Trụ sạc</h2></header>
+              <div id="points-table" class="card-body flush"></div>
+            </article>
+            <article class="card">
+              <header class="card-header"><h2 data-i18n="queue.title">Hàng đợi ưu tiên</h2><span class="muted" data-i18n="queue.rule">Cần dùng sớm trước, sau đó pin thấp hơn</span></header>
+              <div id="charging-queue" class="card-body flush"></div>
+            </article>
+          </section>
+
+          <!-- Operator portal: Incidents (FR-14) -->
+          <section id="page-incidents" class="page" data-page="incidents" hidden>
+            <div class="layout-side-main">
+              <article class="card">
+                <header class="card-header"><h2 data-i18n="incident.record">Ghi nhận sự cố</h2></header>
+                <div class="card-body stack">
+                  <label class="field"><span data-i18n="incident.vehicle">Phương tiện</span><select id="incident-vehicle"></select></label>
+                  <button id="report-vehicle-failure" type="button" class="btn btn-danger" data-i18n="incident.reportVehicle">Báo xe hỏng</button>
+                  <label class="field"><span data-i18n="incident.point">Trụ sạc</span><select id="incident-charging-point"></select></label>
+                  <button id="report-charging-failure" type="button" class="btn btn-danger" data-i18n="incident.reportPoint">Báo trụ ngừng hoạt động</button>
+                </div>
+              </article>
+              <article class="card">
+                <header class="card-header"><h2 data-i18n="incident.list">Danh sách sự cố</h2><span id="incident-summary" class="muted"></span></header>
+                <div id="incident-list" class="card-body flush"></div>
+              </article>
+            </div>
+          </section>
+
+          <!-- Operator portal: What-if simulation (FR-16..FR-18) -->
+          <section id="page-whatif" class="page" data-page="whatif" hidden>
+            <article class="card">
+              <div class="card-body form-row">
+                <label class="field field-wide"><span data-i18n="whatif.scenario">Kịch bản</span><select id="scenario"></select></label>
+                <label class="field"><span data-i18n="whatif.hub">Hub trọng tâm</span><select id="scenario-hub"></select></label>
+                <button id="run-simulation" type="button" class="btn" data-i18n="whatif.run">Chạy mô phỏng</button>
+              </div>
+            </article>
+            <div id="simulation-output"></div>
+          </section>
+        </main>
       </div>
-      <div class="topbar-actions">
-        <button id="toggle-mode" class="secondary-button" type="button">Use dark mode</button>
-        <label class="language-switch">
-          <span>VI / EN</span>
-          <select id="language-select" aria-label="Interface language" data-i18n-aria-label="app.languageAria">
-            <option value="en">English</option>
-            <option value="vi">Tiếng Việt</option>
-          </select>
-        </label>
-        <button id="simulate-update" type="button" data-i18n="action.simulateUpdate">Update simulated state</button>
-      </div>
-    </header>
+    </div>
 
-    <main>
-      <section class="status-strip" aria-live="polite">
-        <div>
-          <span class="live-dot"></span>
-          <strong data-i18n="status.live">Live simulated state</strong>
-          <span id="last-update">Initial simulated state loaded.</span>
-        </div>
-        <button id="toggle-auto-update" class="quiet-button" type="button">Start auto updates</button>
-      </section>
-
-      <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
-
-      <section>
-        <div class="section-heading">
-          <div>
-            <p class="section-kicker" data-i18n="student.kicker">Student workspace</p>
-            <h2 data-i18n="student.title">Find a resource and complete a journey</h2>
-          </div>
-          <span id="demo-identity" class="demo-identity">Demo student STUDENT-DEMO · no account required</span>
-        </div>
-
-        <div id="hub-grid" class="grid"></div>
-
-        <div class="two-column student-tools">
-          <article class="panel">
-            <div>
-              <h3 data-i18n="search.title">Find a suitable vehicle / Hub</h3>
-              <p class="helper" data-i18n="search.helper">Search uses current availability and battery state.</p>
-            </div>
-            <div class="form-grid">
-              <label>
-                <span data-i18n="search.hub">Hub</span>
-                <select id="vehicle-search-hub"></select>
-              </label>
-              <label>
-                <span data-i18n="search.minBattery">Minimum battery (%)</span>
-                <input id="minimum-battery" type="number" min="0" max="100" value="0" />
-              </label>
-              <label>
-                <span data-i18n="search.minParking">Minimum parking spaces</span>
-                <input id="minimum-parking" type="number" min="0" value="0" />
-              </label>
-              <label class="checkbox-label">
-                <input id="charging-required" type="checkbox" />
-                <span data-i18n="search.chargingRequired">Charging point required</span>
-              </label>
-            </div>
-            <div id="search-results" class="result-list"></div>
-          </article>
-
-          <article class="panel">
-            <div>
-              <h3 data-i18n="parking.title">Reserve parking</h3>
-              <p class="helper" data-i18n="parking.helper">A reservation holds one available space against Hub capacity.</p>
-            </div>
-            <label>
-              <span data-i18n="parking.hub">Selected Hub</span>
-              <select id="parking-hub"></select>
-            </label>
-            <button id="reserve-parking" type="button" data-i18n="parking.reserve">Reserve one parking space</button>
-            <div id="parking-status" class="compact-list"></div>
-          </article>
-        </div>
-      </section>
-
-      <section>
-        <div class="section-heading">
-          <div>
-            <p class="section-kicker" data-i18n="ops.kicker">Student operations</p>
-            <h2 data-i18n="ops.title">Shared vehicle lifecycle and charging</h2>
-          </div>
-        </div>
-
-        <article class="panel">
-          <div class="panel-heading">
-            <div>
-              <h3 data-i18n="vehicles.title">Shared vehicles</h3>
-              <p class="helper" data-i18n="vehicles.helper">Reserve first, pick up with the active reservation, then return to a Hub with capacity.</p>
-              <p id="hold-duration" class="helper"></p>
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th data-i18n="vehicles.col.vehicle">Vehicle</th>
-                  <th data-i18n="vehicles.col.hub">Hub</th>
-                  <th data-i18n="vehicles.col.battery">Battery</th>
-                  <th data-i18n="vehicles.col.status">Status</th>
-                  <th data-i18n="vehicles.col.hold">Reservation hold</th>
-                  <th data-i18n="vehicles.col.action">Journey action</th>
-                </tr>
-              </thead>
-              <tbody id="vehicle-rows"></tbody>
-            </table>
-          </div>
-        </article>
-
-        <article class="panel charging-panel">
-          <div>
-            <h3 data-i18n="charging.title">Charging requests</h3>
-            <p class="helper" data-i18n="charging.helper">Shared requests join the queue. A private EV reserves parking and joins the same smart schedule.</p>
-          </div>
-          <div class="form-grid charging-form">
-            <label>
-              <span data-i18n="charging.type">Request type</span>
-              <select id="charging-type">
-                <option value="shared" data-i18n="charging.type.shared">Shared vehicle</option>
-                <option value="private" data-i18n="charging.type.private">Private EV</option>
-              </select>
-            </label>
-            <label>
-              <span data-i18n="charging.hub">Hub</span>
-              <select id="charging-hub"></select>
-            </label>
-            <label id="charging-vehicle-field">
-              <span data-i18n="charging.vehicle">Shared vehicle</span>
-              <select id="charging-vehicle"></select>
-            </label>
-            <label id="private-vehicle-field" class="hidden">
-              <span data-i18n="charging.privateLabel">Private EV label</span>
-              <input id="private-vehicle-label" type="text" value="Private EV 01" maxlength="40" />
-            </label>
-            <label>
-              <span data-i18n="charging.battery">Battery level (%)</span>
-              <input id="charging-battery" type="number" min="0" max="100" value="35" />
-            </label>
-            <label class="checkbox-label">
-              <input id="upcoming-usage" type="checkbox" />
-              <span data-i18n="charging.upcoming">Upcoming usage requirement</span>
-            </label>
-          </div>
-          <p id="charging-battery-hint" class="helper"></p>
-          <div class="button-row">
-            <button id="submit-charging" type="button" data-i18n="charging.submit">Submit charging request</button>
-            <button id="schedule-private" class="secondary-button hidden" type="button" data-i18n="charging.schedulePrivate">Reserve parking &amp; schedule private EV</button>
-          </div>
-          <div id="charging-queue" class="queue-list"></div>
-        </article>
-      </section>
-
-      <section class="operator-section">
-        <div class="section-heading">
-          <div>
-            <p class="section-kicker" data-i18n="operator.kicker">Operator workspace</p>
-            <h2 data-i18n="operator.title">Monitor and coordinate the network</h2>
-          </div>
-        </div>
-
-        <div id="operator-metrics" class="metrics-grid"></div>
-
-        <article class="panel">
-          <div class="panel-heading">
-            <div>
-              <h3 data-i18n="network.title">Mobility Hub network and capacity risk</h3>
-              <p class="helper" data-i18n="network.helper">Hubs are ordered by current physical plus reserved parking utilization.</p>
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th data-i18n="network.col.hub">Hub</th>
-                  <th data-i18n="network.col.parking">Parking</th>
-                  <th data-i18n="network.col.vehicles">Vehicles available</th>
-                  <th data-i18n="network.col.points">Charging points available</th>
-                  <th data-i18n="network.col.risk">Risk order</th>
-                </tr>
-              </thead>
-              <tbody id="operator-hub-rows"></tbody>
-            </table>
-          </div>
-          <div id="redistribution-panel" class="recommendation"></div>
-        </article>
-
-        <div class="two-column operator-tools">
-          <article class="panel">
-            <div>
-              <h3 data-i18n="incidents.title">Vehicle and charging-point incidents</h3>
-              <p class="helper" data-i18n="incidents.helper">Mark a vehicle failed or a charging point unavailable to open an operational incident.</p>
-            </div>
-            <div class="form-grid">
-              <label>
-                <span data-i18n="incidents.vehicle">Vehicle failure</span>
-                <select id="incident-vehicle"></select>
-              </label>
-              <button id="report-vehicle-failure" type="button" data-i18n="incidents.markVehicle">Mark vehicle failed</button>
-              <label>
-                <span data-i18n="incidents.point">Charging point unavailable</span>
-                <select id="incident-charging-point"></select>
-              </label>
-              <button id="report-charging-failure" type="button" data-i18n="incidents.markPoint">Mark point unavailable</button>
-            </div>
-            <div id="incident-list" class="compact-list"></div>
-          </article>
-
-          <article class="panel">
-            <div>
-              <h3 data-i18n="schedule.title">Smart charging schedule</h3>
-              <p class="helper" data-i18n="schedule.helper">Priority uses low battery and upcoming usage, with upcoming usage weighted first.</p>
-            </div>
-            <div id="schedule-controls" class="schedule-controls"></div>
-            <div id="operator-schedule" class="queue-list"></div>
-          </article>
-        </div>
-
-        <article class="panel simulation-panel">
-          <div>
-            <h3 data-i18n="simulation.title">What-if simulation</h3>
-            <p class="helper" data-i18n="simulation.helper">The scenario starts from the current live state and runs on a copy. Live state is not overwritten.</p>
-          </div>
-          <div class="form-grid">
-            <label>
-              <span data-i18n="simulation.scenario">Scenario</span>
-              <select id="scenario"></select>
-            </label>
-            <label>
-              <span data-i18n="simulation.hub">Focus Hub</span>
-              <select id="scenario-hub"></select>
-            </label>
-          </div>
-          <button id="run-simulation" type="button" data-i18n="simulation.run">Run hypothetical scenario</button>
-          <div id="simulation-output" class="simulation-output">Run a scenario to inspect impact and recommendations.</div>
-        </article>
-      </section>
-    </main>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden>
+      <span id="toast-text"></span>
+      <button id="toast-close" type="button" class="toast-close" aria-label="Đóng" data-i18n-aria-label="common.close">×</button>
+    </div>
 
     <script type="module" src="./src/main.js"></script>
   </body>

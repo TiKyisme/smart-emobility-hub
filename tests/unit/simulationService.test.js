@@ -34,12 +34,20 @@ test("scenario effects match their description", () => {
   assert.equal(full.impact.parking.topRiskAfter, "Dormitory Hub");
   assert.ok(full.recommendations.some((item) => item.code === "rec_redirect"));
 
+  // Three extra requests at Metro: the two free chargers are allocated by priority, one waits.
   const demand = runWhatIf(live, { type: ScenarioType.CHARGING_DEMAND_SURGE, hubId: METRO });
-  assert.equal(demand.impact.charging.queuedAfter - demand.impact.charging.queuedBefore, 3);
+  assert.equal(demand.impact.charging.queuedAfter - demand.impact.charging.queuedBefore, 1);
+  assert.equal(demand.impact.charging.availablePointsBefore - demand.impact.charging.availablePointsAfter, 2);
+  assert.deepEqual(
+    demand.simulatedState.chargingRequests.filter((item) => item.status === "scheduled" && item.hubId === METRO).map((item) => item.id).sort(),
+    ["SIM-CHARGE-01", "SIM-CHARGE-03"],
+    "the two requests marked needed-soon are served first",
+  );
   assert.ok(demand.recommendations.some((item) => item.code === "rec_charging"));
 
-  const failures = runWhatIf(live, { type: ScenarioType.CHARGING_POINT_FAILURES, hubId: METRO });
-  assert.equal(failures.impact.charging.availablePointsBefore - failures.impact.charging.availablePointsAfter, 1);
+  const failures = runWhatIf(live, { type: ScenarioType.CHARGING_POINT_FAILURES, hubId: DORM });
+  assert.equal(failures.notes[0].params.pointId, "CP-03", "the focus Hub's charger fails first");
+  assert.equal(failures.simulatedState.vehicles.find((item) => item.id === "EV-04").status, "available", "its session is interrupted");
 
   const concentration = runWhatIf(live, { type: ScenarioType.VEHICLE_CONCENTRATION, hubId: METRO });
   assert.equal(concentration.impact.vehicles.moved, 2);
