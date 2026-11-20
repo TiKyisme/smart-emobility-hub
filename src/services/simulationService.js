@@ -1,4 +1,5 @@
 import { ChargingPointStatus, ChargingRequestStatus, VehicleStatus } from "../domain/status.js";
+import { allocateChargingPoints } from "./chargingService.js";
 import { getCapacityRisks, suggestRedistribution } from "./operatorService.js";
 
 // Traceability: FR-16..FR-18 / UC-17, UC-18 / AT-16..AT-18.
@@ -117,9 +118,17 @@ function applyScenario(simulated, scenario) {
       return note("note_charging_surge", `Simulated a surge in charging demand at ${hubName(hubId)} (+3 requests).`, { hubName: hubName(hubId), count: 3 });
     }
     case ScenarioType.CHARGING_POINT_FAILURES: {
-      const point = simulated.chargingPoints.find((item) => item.status !== ChargingPointStatus.UNAVAILABLE);
+      const working = simulated.chargingPoints.filter((item) => item.status !== ChargingPointStatus.UNAVAILABLE);
+      const point = working.find((item) => item.hubId === scenario.hubId) ?? working[0];
       if (!point) return note("note_point_failure_none", "No charging point was left to fail in the simulated state.");
       point.status = ChargingPointStatus.UNAVAILABLE;
+      // A session on the failed point goes back to the queue, exactly as in the live incident flow.
+      for (const request of simulated.chargingRequests.filter((item) => item.chargingPointId === point.id && item.status === ChargingRequestStatus.SCHEDULED)) {
+        request.status = ChargingRequestStatus.QUEUED;
+        request.chargingPointId = null;
+        const vehicle = request.vehicleId ? simulated.vehicles.find((item) => item.id === request.vehicleId) : null;
+        if (vehicle?.status === VehicleStatus.CHARGING) vehicle.status = VehicleStatus.AVAILABLE;
+      }
       return note("note_point_failure", `Simulated a partial charging-point failure (${point.id}).`, { pointId: point.id });
     }
     case ScenarioType.VEHICLE_CONCENTRATION: {
@@ -150,6 +159,8 @@ export function runWhatIf(state, scenario) {
   const liveSnapshot = JSON.stringify(state);
   const simulated = structuredClone(state);
   const notes = [applyScenario(simulated, scenario)];
+  // The hypothetical network reacts like the live one: free points are allocated by priority.
+  allocateChargingPoints(simulated);
   const redistribution = suggestRedistribution(simulated);
 
   return {

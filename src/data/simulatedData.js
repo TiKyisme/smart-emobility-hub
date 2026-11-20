@@ -1,9 +1,15 @@
-import { VehicleStatus, ChargingPointStatus, InterfaceLanguage, InterfaceMode } from "../domain/status.js";
+import {
+  ChargingPointStatus,
+  ChargingRequestStatus,
+  InterfaceLanguage,
+  InterfaceMode,
+  VehicleStatus,
+} from "../domain/status.js";
 
 export function createInitialState() {
   return {
     interfaceMode: InterfaceMode.LIGHT,
-    interfaceLanguage: InterfaceLanguage.EN,
+    interfaceLanguage: InterfaceLanguage.VI,
     updateSequence: 0,
     lastUpdate: {
       source: "simulator",
@@ -35,7 +41,22 @@ export function createInitialState() {
     ],
     reservations: [],
     parkingReservations: [],
-    chargingRequests: [],
+    // EV-04 is already charging on CP-03 when the simulation starts.
+    chargingRequests: [
+      {
+        id: "CHG-001",
+        status: ChargingRequestStatus.SCHEDULED,
+        source: "shared",
+        studentId: "OPERATOR",
+        hubId: "H-DORM",
+        vehicleId: "EV-04",
+        vehicleLabel: "EV-04",
+        battery: 18,
+        upcomingUsage: true,
+        chargingPointId: "CP-03",
+        createdAt: null,
+      },
+    ],
     incidents: [],
     operationalEvents: [],
     simulationHistory: [],

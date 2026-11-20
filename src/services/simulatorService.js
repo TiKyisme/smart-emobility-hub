@@ -1,4 +1,5 @@
 import { ChargingPointStatus, ChargingRequestStatus, VehicleStatus } from "../domain/status.js";
+import { allocateChargingPoints } from "./chargingService.js";
 import { summarizeHub } from "./hubService.js";
 
 // Traceability: FR-19 / UC-20 / AT-19.
@@ -43,6 +44,7 @@ function chargingTelemetry(draft) {
     delete simulatedBusy.simulatedOccupancy;
     if (simulatedBusy.status === ChargingPointStatus.OCCUPIED) {
       simulatedBusy.status = ChargingPointStatus.AVAILABLE;
+      allocateChargingPoints(draft, [simulatedBusy.hubId]);
       return {
         code: "sim_point_free",
         params: { pointId: simulatedBusy.id },
