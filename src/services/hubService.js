@@ -1,11 +1,13 @@
-import { VehicleStatus, ChargingPointStatus } from "../domain/status.js";
+import { VehicleStatus, ChargingPointStatus, ReservationStatus } from "../domain/status.js";
 
+// Traceability: FR-01..FR-03 / UC-01..UC-03 / AT-01..AT-03.
 function getActiveParkingReservations(state, hubId) {
   return state.parkingReservations.filter(
-    (reservation) => reservation.hubId === hubId && reservation.status === "active",
+    (reservation) => reservation.hubId === hubId && reservation.status === ReservationStatus.ACTIVE,
   );
 }
 
+// D-004: physical occupancy and active parking holds both consume Hub capacity.
 export function summarizeHub(state, hubId) {
   const hub = state.hubs.find((item) => item.id === hubId);
   if (!hub) return null;

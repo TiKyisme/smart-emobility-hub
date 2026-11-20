@@ -24,3 +24,17 @@ export const ChargingRequestStatus = Object.freeze({
   QUEUED: "queued",
   SCHEDULED: "scheduled",
 });
+
+export const IncidentStatus = Object.freeze({
+  OPEN: "open",
+});
+
+export const InterfaceMode = Object.freeze({
+  LIGHT: "light",
+  DARK: "dark",
+});
+
+export const InterfaceLanguage = Object.freeze({
+  EN: "en",
+  VI: "vi",
+});

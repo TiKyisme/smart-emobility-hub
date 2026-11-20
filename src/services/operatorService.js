@@ -1,7 +1,17 @@
-import { ChargingPointStatus, ChargingRequestStatus, ReservationStatus, VehicleStatus } from "../domain/status.js";
+import { createId } from "../domain/ids.js";
+import { failure, success } from "../domain/result.js";
+import {
+  ChargingPointStatus,
+  ChargingRequestStatus,
+  IncidentStatus,
+  ReservationStatus,
+  VehicleStatus,
+} from "../domain/status.js";
 import { listHubSummaries, summarizeHub } from "./hubService.js";
 
 // Traceability: FR-10..FR-14 / UC-11..UC-15 / AT-10..AT-14.
+// FR-12: Hubs are ranked by (physical + held) parking utilization. The assignment gives no
+// numeric "approaching capacity" threshold, so only the ranking and the at-capacity flag are shown.
 export function getCapacityRisks(state) {
   return listHubSummaries(state)
     .map((hub) => ({
@@ -19,22 +29,24 @@ export function getNetworkMetrics(state) {
     availableVehicles: state.vehicles.filter((item) => item.status === VehicleStatus.AVAILABLE).length,
     chargingPoints: state.chargingPoints.length,
     availableChargingPoints: state.chargingPoints.filter((item) => item.status === ChargingPointStatus.AVAILABLE).length,
-    openIncidents: state.incidents.filter((item) => item.status === "open").length,
-    queuedChargingRequests: state.chargingRequests.filter((item) => item.status === "queued").length,
+    openIncidents: state.incidents.filter((item) => item.status === IncidentStatus.OPEN).length,
+    queuedChargingRequests: state.chargingRequests.filter((item) => item.status === ChargingRequestStatus.QUEUED).length,
   };
 }
 
 export function reportVehicleFailure(store, vehicleId) {
   const state = store.getState();
-  if (!state.vehicles.some((item) => item.id === vehicleId)) return { ok: false, message: "Vehicle not found." };
-  if (state.vehicles.find((item) => item.id === vehicleId).status === VehicleStatus.FAILED) {
-    return { ok: false, message: "Vehicle is already marked as failed." };
+  const vehicle = state.vehicles.find((item) => item.id === vehicleId);
+  if (!vehicle) return failure("vehicle_not_found", "Vehicle not found.", { vehicleId });
+  if (vehicle.status === VehicleStatus.FAILED) {
+    return failure("vehicle_already_failed", `${vehicleId} is already marked as failed.`, { vehicleId });
   }
   store.update((draft) => {
     draft.vehicles.find((item) => item.id === vehicleId).status = VehicleStatus.FAILED;
     for (const reservation of draft.reservations.filter(
       (item) => item.vehicleId === vehicleId && [ReservationStatus.ACTIVE, ReservationStatus.IN_USE].includes(item.status),
-    )) reservation.status = "cancelled";
+    )) reservation.status = ReservationStatus.CANCELLED;
+    // A failed vehicle releases its charging point; the request waits (on hold) in the queue.
     for (const request of draft.chargingRequests.filter(
       (item) => item.vehicleId === vehicleId && item.status === ChargingRequestStatus.SCHEDULED,
     )) {
@@ -43,35 +55,40 @@ export function reportVehicleFailure(store, vehicleId) {
       request.status = ChargingRequestStatus.QUEUED;
       request.chargingPointId = null;
     }
-    draft.incidents.push({ id: createId("incident"), type: "vehicle_failure", resourceId: vehicleId, status: "open" });
+    draft.incidents.push({ id: createId("incident"), type: "vehicle_failure", resourceId: vehicleId, status: IncidentStatus.OPEN });
   });
-  return { ok: true, message: `${vehicleId} marked failed and incident opened.` };
+  return success("vehicle_failure_reported", `${vehicleId} marked failed and incident opened.`, { vehicleId });
 }
 
 export function reportChargingPointUnavailable(store, chargingPointId) {
   const state = store.getState();
-  if (!state.chargingPoints.some((item) => item.id === chargingPointId)) return { ok: false, message: "Charging point not found." };
-  if (state.chargingPoints.find((item) => item.id === chargingPointId).status === ChargingPointStatus.UNAVAILABLE) {
-    return { ok: false, message: "Charging point is already unavailable." };
+  const point = state.chargingPoints.find((item) => item.id === chargingPointId);
+  if (!point) return failure("point_not_found", "Charging point not found.", { pointId: chargingPointId });
+  if (point.status === ChargingPointStatus.UNAVAILABLE) {
+    return failure("point_already_unavailable", `${chargingPointId} is already unavailable.`, { pointId: chargingPointId });
   }
   store.update((draft) => {
-    draft.chargingPoints.find((item) => item.id === chargingPointId).status = ChargingPointStatus.UNAVAILABLE;
-    for (const request of draft.chargingRequests.filter((item) => item.chargingPointId === chargingPointId && item.status === ChargingRequestStatus.SCHEDULED)) {
+    const target = draft.chargingPoints.find((item) => item.id === chargingPointId);
+    target.status = ChargingPointStatus.UNAVAILABLE;
+    delete target.simulatedOccupancy;
+    // Requests charging on this point go back to the queue and their vehicle stops charging,
+    // so the next schedule can move them to another free point.
+    for (const request of draft.chargingRequests.filter(
+      (item) => item.chargingPointId === chargingPointId && item.status === ChargingRequestStatus.SCHEDULED,
+    )) {
       request.status = ChargingRequestStatus.QUEUED;
       request.chargingPointId = null;
+      const vehicle = request.vehicleId ? draft.vehicles.find((item) => item.id === request.vehicleId) : null;
+      if (vehicle?.status === VehicleStatus.CHARGING) vehicle.status = VehicleStatus.AVAILABLE;
     }
     draft.incidents.push({
       id: createId("incident"),
       type: "charging_point_unavailable",
       resourceId: chargingPointId,
-      status: "open",
+      status: IncidentStatus.OPEN,
     });
   });
-  return { ok: true, message: `${chargingPointId} marked unavailable and incident opened.` };
-}
-
-function createId(prefix) {
-  return globalThis.crypto?.randomUUID?.() ?? `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return success("point_unavailable_reported", `${chargingPointId} marked unavailable and incident opened.`, { pointId: chargingPointId });
 }
 
 export function suggestRedistribution(state) {
@@ -83,12 +100,14 @@ export function suggestRedistribution(state) {
     fromHubId: source.id,
     toHubId: destination.id,
     vehicleCount: Math.max(1, Math.min(source.availableVehicles || 1, destination.parkingAvailable || 1)),
+    code: "redistribution_suggested",
+    params: { fromHub: source.name, toHub: destination.name },
     message: `Consider redistributing vehicles from ${source.name} to ${destination.name}.`,
   };
 }
 
 export function coordinateRedistribution(store, recommendation) {
-  if (!recommendation) return { ok: false, message: "No redistribution recommendation is available." };
+  if (!recommendation) return failure("redistribution_none", "No redistribution recommendation is available.");
   const state = store.getState();
   const source = state.hubs.find((hub) => hub.id === recommendation.fromHubId);
   const destination = state.hubs.find((hub) => hub.id === recommendation.toHubId);
@@ -97,9 +116,11 @@ export function coordinateRedistribution(store, recommendation) {
   );
   const destinationSummary = destination ? summarizeHub(state, destination.id) : null;
 
-  if (!source || !destination || !vehicle) return { ok: false, message: "No available vehicle can be moved from the recommended source Hub." };
+  if (!source || !destination || !vehicle) {
+    return failure("redistribution_no_vehicle", "No available vehicle can be moved from the recommended source Hub.");
+  }
   if (!destinationSummary || destinationSummary.parkingAvailable <= 0) {
-    return { ok: false, message: "The recommended destination Hub has no parking capacity." };
+    return failure("redistribution_destination_full", "The recommended destination Hub has no parking capacity.");
   }
 
   store.update((draft) => {
@@ -111,5 +132,9 @@ export function coordinateRedistribution(store, recommendation) {
     movingVehicle.hubId = destination.id;
   });
 
-  return { ok: true, message: `${vehicle.id} coordinated from ${source.name} to ${destination.name}.` };
+  return success(
+    "redistribution_done",
+    `${vehicle.id} coordinated from ${source.name} to ${destination.name}.`,
+    { vehicleId: vehicle.id, fromHub: source.name, toHub: destination.name },
+  );
 }

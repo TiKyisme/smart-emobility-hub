@@ -9,6 +9,7 @@
   --border: #dbe2e6;
   --accent: #087f5b;
   --accent-soft: #e5f5ee;
+  --on-accent: #ffffff;
   --danger: #b42318;
   --danger-soft: #fff0ee;
   --warning: #9a6700;
@@ -26,6 +27,7 @@
   --border: #39474c;
   --accent: #55d39d;
   --accent-soft: #173d30;
+  --on-accent: #0b1f17;
   --danger: #ff9388;
   --danger-soft: #452521;
   --warning: #f0bf5b;
@@ -57,6 +59,7 @@ section { display: grid; gap: 1rem; }
 .live-dot { width: .55rem; height: .55rem; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 .25rem var(--accent-soft); }
 .feedback { min-height: 0; padding: 0; border-radius: 9px; font-size: .9rem; }
 .feedback:not(:empty) { padding: .7rem .85rem; border: 1px solid var(--border); }
+.feedback:empty { display: none; }
 .feedback-success { color: var(--accent); background: var(--accent-soft); }
 .feedback-error { color: var(--danger); background: var(--danger-soft); }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
@@ -76,7 +79,7 @@ section { display: grid; gap: 1rem; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .75rem; }
 label { display: grid; gap: .3rem; color: var(--muted); font-size: .8rem; font-weight: 650; }
 input, select, button { min-height: 2.35rem; border: 1px solid var(--border); border-radius: 8px; padding: .5rem .7rem; color: var(--text); background: var(--panel); }
-button { border-color: var(--accent); color: #fff; background: var(--accent); font-weight: 700; }
+button { border-color: var(--accent); color: var(--on-accent); background: var(--accent); font-weight: 700; }
 button:hover { filter: brightness(.96); }
 button:disabled { cursor: not-allowed; opacity: .55; }
 .secondary-button, .quiet-button { color: var(--text); border-color: var(--border); background: var(--panel-muted); }
@@ -100,7 +103,7 @@ td { font-size: .88rem; }
 .table-note { display: block; color: var(--muted); font-size: .75rem; }
 .reservation-hold { display: grid; gap: .2rem; }
 .reservation-hold small { color: var(--muted); font-size: .72rem; white-space: nowrap; }
-.badge, .risk-pill { display: inline-block; padding: .2rem .48rem; border-radius: 99px; font-size: .72rem; font-weight: 750; text-transform: capitalize; white-space: nowrap; }
+.badge, .risk-pill { display: inline-block; padding: .2rem .48rem; border-radius: 99px; font-size: .72rem; font-weight: 750; white-space: nowrap; }
 .status-available { color: var(--accent); background: var(--accent-soft); }
 .status-reserved, .status-in_use, .status-charging, .status-scheduled { color: var(--warning); background: var(--warning-soft); }
 .status-failed, .status-unavailable { color: var(--danger); background: var(--danger-soft); }
@@ -122,10 +125,15 @@ td { font-size: .88rem; }
 .schedule-control small { display: block; color: var(--muted); font-size: .75rem; font-weight: 400; }
 .schedule-block { display: grid; gap: .45rem; padding-top: .25rem; }
 .waiting-row { border-style: dashed; }
+.blocked-row { border-color: color-mix(in srgb, var(--warning) 45%, var(--border)); background: var(--warning-soft); }
+.language-switch { display: flex; align-items: center; gap: .4rem; color: var(--muted); font-size: .78rem; font-weight: 700; }
+.language-switch select { min-height: 2.35rem; padding: .35rem .5rem; }
+input:disabled { color: var(--muted); background: var(--panel-muted); cursor: not-allowed; }
 .simulation-panel { gap: 1rem; }
 .simulation-output { min-height: 100px; padding: .85rem; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-muted); font-size: .86rem; }
 .simulation-summary { margin-bottom: .65rem; }
 .success-label { color: var(--accent); font-weight: 750; font-size: .78rem; }
+.danger-label { color: var(--danger); font-weight: 750; font-size: .78rem; }
 .impact-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: .5rem; margin: .8rem 0; }
 .impact-grid div { display: grid; gap: .15rem; padding: .55rem; border: 1px solid var(--border); border-radius: 7px; }
 .impact-grid span { color: var(--muted); font-size: .72rem; }
