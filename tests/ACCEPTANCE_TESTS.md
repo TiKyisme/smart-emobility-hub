@@ -22,3 +22,10 @@ These tests are directly tied to the documented requirements and are intended fo
 - **AT-18 (FR-18):** Verify simulation output shows a relevant coordination recommendation where applicable.
 - **AT-19 (FR-19):** Trigger a simulated data update and verify the visible state changes without reload/manual source editing.
 - **AT-20 (FR-20):** Toggle interface mode and verify the display mode changes.
+
+## How these cases are executed
+
+- **Automated service and page checks:** `npm test` (Node built-in test runner, no dependencies) runs `tests/unit/*.test.js`, including the failure paths that need a second student or a fixed clock (AT-04 second user, AT-06 wrong student / expired hold).
+- **Automated browser run:** `python tests/e2e/browser_acceptance.py` drives the real page in Chrome or Edge (optional dev tool: `pip install playwright`). Each scenario reloads the page so the in-memory state starts from the seed data.
+- **Manual walk-through:** `docs/demo/DEMO_CHECKLIST.md` lists the same cases as clickable steps with expected results; results of the latest runs are recorded in `docs/demo/DEMO_EVIDENCE.md`.
+- The demo identity is fixed (D-003), so the UI hides actions that belong to another student; the service-level rejection is covered by the automated checks.

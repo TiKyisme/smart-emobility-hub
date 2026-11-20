@@ -1,148 +1,175 @@
-import { applyChargingSchedule, schedulePrivateEvCharging, submitChargingRequest } from "./services/chargingService.js";
 import { createInitialState } from "./data/simulatedData.js";
+import { InterfaceMode } from "./domain/status.js";
+import { applyChargingSchedule, schedulePrivateEvCharging, submitChargingRequest } from "./services/chargingService.js";
 import { coordinateRedistribution, reportChargingPointUnavailable, reportVehicleFailure, suggestRedistribution } from "./services/operatorService.js";
-import { expireReservations, pickUpVehicle, reserveParking, reserveVehicle, returnVehicle } from "./services/reservationService.js";
+import {
+  expireReservations,
+  pickUpVehicle,
+  RESERVATION_HOLD_DURATION_MS,
+  reserveParking,
+  reserveVehicle,
+  returnVehicle,
+} from "./services/reservationService.js";
 import { runWhatIf } from "./services/simulationService.js";
-import { applySimulatedUpdate } from "./services/simulatorService.js";
+import { applySimulatedUpdate, AUTO_UPDATE_INTERVAL_MS } from "./services/simulatorService.js";
 import { createStore } from "./state/store.js";
-import { DEMO_STUDENT_ID, renderApp, renderSimulationResult } from "./ui/render.js";
+import { normalizeLanguage } from "./ui/i18n.js";
+import { DEMO_STUDENT_ID, renderApp } from "./ui/render.js";
 
+// D-007: the hold duration defaults to 15 minutes. For a live demonstration it can be shortened
+// explicitly through the page URL, e.g. http://127.0.0.1:5173/?holdSeconds=60 (10..3600 s).
+const HOLD_SECONDS_MIN = 10;
+const HOLD_SECONDS_MAX = 3600;
+
+function readHoldDurationOverrideMs() {
+  const raw = new URLSearchParams(window.location.search).get("holdSeconds");
+  if (raw === null) return null;
+  const seconds = Number(raw);
+  if (!Number.isInteger(seconds) || seconds < HOLD_SECONDS_MIN || seconds > HOLD_SECONDS_MAX) return null;
+  return seconds * 1000;
+}
+
+const holdOverrideMs = readHoldDurationOverrideMs();
 const store = createStore(createInitialState());
+// Transient presentation state that is not part of the simulated network state.
+const view = {
+  feedback: null,
+  simulation: null,
+  autoUpdating: false,
+  holdDurationMs: holdOverrideMs ?? RESERVATION_HOLD_DURATION_MS,
+  customHoldDuration: holdOverrideMs !== null,
+};
 let autoUpdateTimer = null;
 
-// Keep active reservation holds current even when the user does not click another action.
-window.setInterval(() => expireReservations(store), 1000);
+function render() {
+  renderApp(store.getState(), view);
+}
 
-function showFeedback(message, ok = true) {
-  const feedback = document.querySelector("#feedback");
-  feedback.textContent = message;
-  feedback.className = `feedback ${ok ? "feedback-success" : "feedback-error"}`;
+function showResult(result) {
+  view.feedback = { ok: Boolean(result?.ok), result };
+  render();
+}
+
+function showMessage(key, params = {}, ok = true) {
+  view.feedback = { ok, key, params };
+  render();
 }
 
 function selectedValue(id) {
   return document.querySelector(`#${id}`)?.value ?? "";
 }
 
-function numberValue(id, fallback = 0) {
-  const value = Number(selectedValue(id));
-  return Number.isFinite(value) ? value : fallback;
-}
-
-function handleResult(result) {
-  showFeedback(result.message ?? (result.ok ? "Operation completed." : "Operation could not be completed."), result.ok);
+function isChecked(id) {
+  return Boolean(document.querySelector(`#${id}`)?.checked);
 }
 
 function handleResourceAction(event) {
   const button = event.target.closest("[data-action]");
   if (!button) return;
 
-  const action = button.dataset.action;
-  let result;
+  const { action, vehicleId, hubId } = button.dataset;
+  let result = null;
   if (action === "reserve-vehicle") {
-    result = reserveVehicle(store, { studentId: DEMO_STUDENT_ID, vehicleId: button.dataset.vehicleId });
+    result = reserveVehicle(store, { studentId: DEMO_STUDENT_ID, vehicleId, holdDurationMs: view.holdDurationMs });
   } else if (action === "pickup-vehicle") {
-    result = pickUpVehicle(store, { studentId: DEMO_STUDENT_ID, vehicleId: button.dataset.vehicleId });
+    result = pickUpVehicle(store, { studentId: DEMO_STUDENT_ID, vehicleId });
   } else if (action === "return-vehicle") {
     const destinationHubId = button.closest(".inline-action")?.querySelector("select")?.value;
-    result = returnVehicle(store, { vehicleId: button.dataset.vehicleId, destinationHubId });
+    result = returnVehicle(store, { vehicleId, destinationHubId, studentId: DEMO_STUDENT_ID });
   } else if (action === "coordinate-redistribution") {
     result = coordinateRedistribution(store, suggestRedistribution(store.getState()));
   } else if (action === "schedule-hub") {
-    const schedule = applyChargingSchedule(store, button.dataset.hubId);
-    result = {
-      ok: true,
-      message: schedule.scheduled.length > 0
-        ? `Charging schedule applied: ${schedule.scheduled.length} request${schedule.scheduled.length === 1 ? "" : "s"} assigned; ${schedule.waiting.length} waiting.`
-        : "No queued charging request can be assigned at this Hub.",
-    };
+    result = applyChargingSchedule(store, hubId);
   }
 
-  if (result) handleResult(result);
+  if (result) showResult(result);
 }
 
-function submitStudentCharging() {
-  const result = submitChargingRequest(store, {
+function submitSharedCharging() {
+  showResult(submitChargingRequest(store, {
     studentId: DEMO_STUDENT_ID,
     hubId: selectedValue("charging-hub"),
     vehicleId: selectedValue("charging-vehicle"),
-    battery: numberValue("charging-battery", null),
-    upcomingUsage: document.querySelector("#upcoming-usage").checked,
-  });
-  handleResult(result);
+    upcomingUsage: isChecked("upcoming-usage"),
+  }));
 }
 
 function submitPrivateCharging() {
-  const label = selectedValue("private-vehicle-label").trim() || "Private EV";
-  const result = schedulePrivateEvCharging(store, {
+  showResult(schedulePrivateEvCharging(store, {
     studentId: DEMO_STUDENT_ID,
     hubId: selectedValue("charging-hub"),
-    vehicleLabel: label,
-    battery: numberValue("charging-battery", null),
-    upcomingUsage: document.querySelector("#upcoming-usage").checked,
-  });
-  handleResult(result);
+    vehicleLabel: selectedValue("private-vehicle-label"),
+    battery: selectedValue("charging-battery"),
+    upcomingUsage: isChecked("upcoming-usage"),
+  }));
 }
 
 function toggleAutoUpdates() {
-  const button = document.querySelector("#toggle-auto-update");
   if (autoUpdateTimer) {
     window.clearInterval(autoUpdateTimer);
     autoUpdateTimer = null;
-    button.textContent = "Start auto updates";
-    showFeedback("Automatic simulated updates paused.");
+    view.autoUpdating = false;
+    showMessage("feedback.autoPaused");
     return;
   }
 
-  autoUpdateTimer = window.setInterval(() => applySimulatedUpdate(store), 15000);
-  button.textContent = "Stop auto updates";
-  showFeedback("Automatic simulated updates started; the next update will arrive in 15 seconds.");
+  autoUpdateTimer = window.setInterval(() => applySimulatedUpdate(store), AUTO_UPDATE_INTERVAL_MS);
+  view.autoUpdating = true;
+  showMessage("feedback.autoStarted", { seconds: AUTO_UPDATE_INTERVAL_MS / 1000 });
+}
+
+function runScenario() {
+  view.simulation = runWhatIf(store.getState(), {
+    type: selectedValue("scenario"),
+    hubId: selectedValue("scenario-hub"),
+  });
+  if (view.simulation.liveStateUnchanged) showMessage("feedback.whatIfDone");
+  else showMessage("feedback.whatIfChanged", {}, false);
+}
+
+// FR-04 alternative flow: release holds that expire before pickup, even without user interaction.
+function expireHolds() {
+  const { expired } = expireReservations(store);
+  if (expired.length === 0) return;
+  const vehicles = store.getState().reservations
+    .filter((reservation) => expired.includes(reservation.id))
+    .map((reservation) => reservation.vehicleId)
+    .join(", ");
+  showMessage("feedback.holdExpired", { vehicles }, false);
 }
 
 function wireEvents() {
-  document.querySelector("#toggle-mode").addEventListener("click", () => {
+  const on = (selector, type, handler) => document.querySelector(selector).addEventListener(type, handler);
+
+  on("#toggle-mode", "click", () => {
     store.update((state) => {
-      state.interfaceMode = state.interfaceMode === "light" ? "dark" : "light";
+      state.interfaceMode = state.interfaceMode === InterfaceMode.LIGHT ? InterfaceMode.DARK : InterfaceMode.LIGHT;
     });
   });
+  on("#language-select", "change", (event) => {
+    store.update((state) => {
+      state.interfaceLanguage = normalizeLanguage(event.target.value);
+    });
+  });
+  on("#simulate-update", "click", () => showResult(applySimulatedUpdate(store)));
+  on("#toggle-auto-update", "click", toggleAutoUpdates);
+  on("#reserve-parking", "click", () => {
+    showResult(reserveParking(store, { studentId: DEMO_STUDENT_ID, hubId: selectedValue("parking-hub"), vehicleType: "private" }));
+  });
+  on("#submit-charging", "click", submitSharedCharging);
+  on("#schedule-private", "click", submitPrivateCharging);
+  on("#report-vehicle-failure", "click", () => showResult(reportVehicleFailure(store, selectedValue("incident-vehicle"))));
+  on("#report-charging-failure", "click", () => showResult(reportChargingPointUnavailable(store, selectedValue("incident-charging-point"))));
+  on("#run-simulation", "click", runScenario);
 
-  document.querySelector("#simulate-update").addEventListener("click", () => {
-    const result = applySimulatedUpdate(store);
-    showFeedback(result.message);
-  });
-  document.querySelector("#toggle-auto-update").addEventListener("click", toggleAutoUpdates);
-  document.querySelector("#reserve-parking").addEventListener("click", () => {
-    handleResult(reserveParking(store, {
-      studentId: DEMO_STUDENT_ID,
-      hubId: selectedValue("parking-hub"),
-      vehicleType: "private",
-    }));
-  });
-  document.querySelector("#submit-charging").addEventListener("click", submitStudentCharging);
-  document.querySelector("#schedule-private").addEventListener("click", submitPrivateCharging);
-  document.querySelector("#report-vehicle-failure").addEventListener("click", () => {
-    handleResult(reportVehicleFailure(store, selectedValue("incident-vehicle")));
-  });
-  document.querySelector("#report-charging-failure").addEventListener("click", () => {
-    handleResult(reportChargingPointUnavailable(store, selectedValue("incident-charging-point")));
-  });
-  document.querySelector("#run-simulation").addEventListener("click", () => {
-    renderSimulationResult(runWhatIf(store.getState(), {
-      type: selectedValue("scenario"),
-      hubId: selectedValue("scenario-hub"),
-    }));
-    showFeedback("Hypothetical scenario evaluated. Live network state was not changed.");
-  });
-
-  document.querySelector("#charging-type").addEventListener("change", () => renderApp(store.getState()));
-  document.querySelector("#charging-hub").addEventListener("change", () => renderApp(store.getState()));
-  document.querySelector("#parking-hub").addEventListener("change", () => renderApp(store.getState()));
-  document.querySelector("#vehicle-search-hub").addEventListener("change", () => renderApp(store.getState()));
-  document.querySelector("#minimum-battery").addEventListener("input", () => renderApp(store.getState()));
-  document.querySelector("#minimum-parking").addEventListener("input", () => renderApp(store.getState()));
-  document.querySelector("#charging-required").addEventListener("change", () => renderApp(store.getState()));
+  for (const id of ["#charging-type", "#charging-hub", "#charging-vehicle", "#parking-hub", "#vehicle-search-hub", "#charging-required"]) {
+    on(id, "change", render);
+  }
+  for (const id of ["#minimum-battery", "#minimum-parking"]) on(id, "input", render);
   document.addEventListener("click", handleResourceAction);
 }
 
-store.subscribe(renderApp);
-renderApp(store.getState());
+store.subscribe(render);
+render();
 wireEvents();
+window.setInterval(expireHolds, 1000);

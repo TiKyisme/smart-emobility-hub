@@ -1,0 +1,11 @@
+{
+  "name": "smart-emobility-hub",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Smart E-Mobility Hub MVP: static HTML/CSS/JavaScript ES modules with simulated in-memory data. No runtime dependencies.",
+  "type": "module",
+  "scripts": {
+    "start": "python -m http.server 5173 --bind 127.0.0.1",
+    "test": "node --test \"tests/unit/*.test.js\""
+  }
+}

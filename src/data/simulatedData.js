@@ -1,11 +1,14 @@
-import { VehicleStatus, ChargingPointStatus } from "../domain/status.js";
+import { VehicleStatus, ChargingPointStatus, InterfaceLanguage, InterfaceMode } from "../domain/status.js";
 
 export function createInitialState() {
   return {
-    interfaceMode: "light",
+    interfaceMode: InterfaceMode.LIGHT,
+    interfaceLanguage: InterfaceLanguage.EN,
     updateSequence: 0,
     lastUpdate: {
       source: "simulator",
+      code: "initial_state",
+      params: {},
       message: "Initial simulated state loaded.",
       at: null,
     },

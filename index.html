@@ -4,18 +4,26 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Smart E-Mobility Hub</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
     <header class="topbar">
       <div>
-        <p class="eyebrow">Software Engineering HK261 · Simulated MVP</p>
+        <p class="eyebrow" data-i18n="app.eyebrow">Software Engineering HK261 · Simulated MVP</p>
         <h1>Smart E-Mobility Hub</h1>
-        <p class="subtitle">Coordinate shared vehicles, parking, and charging across the VNU-HCM network.</p>
+        <p class="subtitle" data-i18n="app.subtitle">Coordinate shared vehicles, parking, and charging across the VNU-HCM network.</p>
       </div>
       <div class="topbar-actions">
-        <button id="toggle-mode" type="button">Use dark mode</button>
-        <button id="simulate-update" type="button">Update simulated state</button>
+        <button id="toggle-mode" class="secondary-button" type="button">Use dark mode</button>
+        <label class="language-switch">
+          <span>VI / EN</span>
+          <select id="language-select" aria-label="Interface language" data-i18n-aria-label="app.languageAria">
+            <option value="en">English</option>
+            <option value="vi">Tiếng Việt</option>
+          </select>
+        </label>
+        <button id="simulate-update" type="button" data-i18n="action.simulateUpdate">Update simulated state</button>
       </div>
     </header>
 
@@ -23,7 +31,7 @@
       <section class="status-strip" aria-live="polite">
         <div>
           <span class="live-dot"></span>
-          <strong>Live simulated state</strong>
+          <strong data-i18n="status.live">Live simulated state</strong>
           <span id="last-update">Initial simulated state loaded.</span>
         </div>
         <button id="toggle-auto-update" class="quiet-button" type="button">Start auto updates</button>
@@ -34,10 +42,10 @@
       <section>
         <div class="section-heading">
           <div>
-            <p class="section-kicker">Student workspace</p>
-            <h2>Find a resource and complete a journey</h2>
+            <p class="section-kicker" data-i18n="student.kicker">Student workspace</p>
+            <h2 data-i18n="student.title">Find a resource and complete a journey</h2>
           </div>
-          <span class="demo-identity">Demo student · no account required</span>
+          <span id="demo-identity" class="demo-identity">Demo student STUDENT-DEMO · no account required</span>
         </div>
 
         <div id="hub-grid" class="grid"></div>
@@ -45,25 +53,25 @@
         <div class="two-column student-tools">
           <article class="panel">
             <div>
-              <h3>Find a suitable vehicle / Hub</h3>
-              <p class="helper">Search uses current availability and battery state.</p>
+              <h3 data-i18n="search.title">Find a suitable vehicle / Hub</h3>
+              <p class="helper" data-i18n="search.helper">Search uses current availability and battery state.</p>
             </div>
             <div class="form-grid">
               <label>
-                Hub
+                <span data-i18n="search.hub">Hub</span>
                 <select id="vehicle-search-hub"></select>
               </label>
               <label>
-                Minimum battery
+                <span data-i18n="search.minBattery">Minimum battery (%)</span>
                 <input id="minimum-battery" type="number" min="0" max="100" value="0" />
               </label>
               <label>
-                Minimum parking spaces
+                <span data-i18n="search.minParking">Minimum parking spaces</span>
                 <input id="minimum-parking" type="number" min="0" value="0" />
               </label>
               <label class="checkbox-label">
                 <input id="charging-required" type="checkbox" />
-                Charging point required
+                <span data-i18n="search.chargingRequired">Charging point required</span>
               </label>
             </div>
             <div id="search-results" class="result-list"></div>
@@ -71,14 +79,14 @@
 
           <article class="panel">
             <div>
-              <h3>Reserve parking</h3>
-              <p class="helper">A reservation holds one available space against Hub capacity.</p>
+              <h3 data-i18n="parking.title">Reserve parking</h3>
+              <p class="helper" data-i18n="parking.helper">A reservation holds one available space against Hub capacity.</p>
             </div>
             <label>
-              Selected Hub
+              <span data-i18n="parking.hub">Selected Hub</span>
               <select id="parking-hub"></select>
             </label>
-            <button id="reserve-parking" type="button">Reserve one parking space</button>
+            <button id="reserve-parking" type="button" data-i18n="parking.reserve">Reserve one parking space</button>
             <div id="parking-status" class="compact-list"></div>
           </article>
         </div>
@@ -87,22 +95,30 @@
       <section>
         <div class="section-heading">
           <div>
-            <p class="section-kicker">Student operations</p>
-            <h2>Shared vehicle lifecycle and charging</h2>
+            <p class="section-kicker" data-i18n="ops.kicker">Student operations</p>
+            <h2 data-i18n="ops.title">Shared vehicle lifecycle and charging</h2>
           </div>
         </div>
 
         <article class="panel">
           <div class="panel-heading">
             <div>
-              <h3>Shared vehicles</h3>
-              <p class="helper">Reserve first, pick up with the active reservation, then return to a Hub with capacity.</p>
+              <h3 data-i18n="vehicles.title">Shared vehicles</h3>
+              <p class="helper" data-i18n="vehicles.helper">Reserve first, pick up with the active reservation, then return to a Hub with capacity.</p>
+              <p id="hold-duration" class="helper"></p>
             </div>
           </div>
           <div class="table-wrap">
             <table>
               <thead>
-                <tr><th>Vehicle</th><th>Hub</th><th>Battery</th><th>Status</th><th>Reservation hold</th><th>Journey action</th></tr>
+                <tr>
+                  <th data-i18n="vehicles.col.vehicle">Vehicle</th>
+                  <th data-i18n="vehicles.col.hub">Hub</th>
+                  <th data-i18n="vehicles.col.battery">Battery</th>
+                  <th data-i18n="vehicles.col.status">Status</th>
+                  <th data-i18n="vehicles.col.hold">Reservation hold</th>
+                  <th data-i18n="vehicles.col.action">Journey action</th>
+                </tr>
               </thead>
               <tbody id="vehicle-rows"></tbody>
             </table>
@@ -111,41 +127,42 @@
 
         <article class="panel charging-panel">
           <div>
-            <h3>Charging requests</h3>
-            <p class="helper">Shared requests join the queue. A private EV reserves parking and joins the same smart schedule.</p>
+            <h3 data-i18n="charging.title">Charging requests</h3>
+            <p class="helper" data-i18n="charging.helper">Shared requests join the queue. A private EV reserves parking and joins the same smart schedule.</p>
           </div>
           <div class="form-grid charging-form">
             <label>
-              Request type
+              <span data-i18n="charging.type">Request type</span>
               <select id="charging-type">
-                <option value="shared">Shared vehicle</option>
-                <option value="private">Private EV</option>
+                <option value="shared" data-i18n="charging.type.shared">Shared vehicle</option>
+                <option value="private" data-i18n="charging.type.private">Private EV</option>
               </select>
             </label>
             <label>
-              Hub
+              <span data-i18n="charging.hub">Hub</span>
               <select id="charging-hub"></select>
             </label>
             <label id="charging-vehicle-field">
-              Shared vehicle
+              <span data-i18n="charging.vehicle">Shared vehicle</span>
               <select id="charging-vehicle"></select>
             </label>
             <label id="private-vehicle-field" class="hidden">
-              Private EV label
+              <span data-i18n="charging.privateLabel">Private EV label</span>
               <input id="private-vehicle-label" type="text" value="Private EV 01" maxlength="40" />
             </label>
             <label>
-              Battery level
+              <span data-i18n="charging.battery">Battery level (%)</span>
               <input id="charging-battery" type="number" min="0" max="100" value="35" />
             </label>
             <label class="checkbox-label">
               <input id="upcoming-usage" type="checkbox" />
-              Upcoming usage requirement
+              <span data-i18n="charging.upcoming">Upcoming usage requirement</span>
             </label>
           </div>
+          <p id="charging-battery-hint" class="helper"></p>
           <div class="button-row">
-            <button id="submit-charging" type="button">Submit charging request</button>
-            <button id="schedule-private" class="secondary-button hidden" type="button">Reserve parking &amp; schedule private EV</button>
+            <button id="submit-charging" type="button" data-i18n="charging.submit">Submit charging request</button>
+            <button id="schedule-private" class="secondary-button hidden" type="button" data-i18n="charging.schedulePrivate">Reserve parking &amp; schedule private EV</button>
           </div>
           <div id="charging-queue" class="queue-list"></div>
         </article>
@@ -154,8 +171,8 @@
       <section class="operator-section">
         <div class="section-heading">
           <div>
-            <p class="section-kicker">Operator workspace</p>
-            <h2>Monitor and coordinate the network</h2>
+            <p class="section-kicker" data-i18n="operator.kicker">Operator workspace</p>
+            <h2 data-i18n="operator.title">Monitor and coordinate the network</h2>
           </div>
         </div>
 
@@ -164,14 +181,20 @@
         <article class="panel">
           <div class="panel-heading">
             <div>
-              <h3>Mobility Hub network and capacity risk</h3>
-              <p class="helper">Hubs are ordered by current physical plus reserved parking utilization.</p>
+              <h3 data-i18n="network.title">Mobility Hub network and capacity risk</h3>
+              <p class="helper" data-i18n="network.helper">Hubs are ordered by current physical plus reserved parking utilization.</p>
             </div>
           </div>
           <div class="table-wrap">
             <table>
               <thead>
-                <tr><th>Hub</th><th>Parking</th><th>Vehicles available</th><th>Charging points</th><th>Risk order</th></tr>
+                <tr>
+                  <th data-i18n="network.col.hub">Hub</th>
+                  <th data-i18n="network.col.parking">Parking</th>
+                  <th data-i18n="network.col.vehicles">Vehicles available</th>
+                  <th data-i18n="network.col.points">Charging points available</th>
+                  <th data-i18n="network.col.risk">Risk order</th>
+                </tr>
               </thead>
               <tbody id="operator-hub-rows"></tbody>
             </table>
@@ -182,28 +205,28 @@
         <div class="two-column operator-tools">
           <article class="panel">
             <div>
-              <h3>Vehicle and charging-point incidents</h3>
-              <p class="helper">Mark a vehicle failed or a charging point unavailable to open an operational incident.</p>
+              <h3 data-i18n="incidents.title">Vehicle and charging-point incidents</h3>
+              <p class="helper" data-i18n="incidents.helper">Mark a vehicle failed or a charging point unavailable to open an operational incident.</p>
             </div>
             <div class="form-grid">
               <label>
-                Vehicle failure
+                <span data-i18n="incidents.vehicle">Vehicle failure</span>
                 <select id="incident-vehicle"></select>
               </label>
-              <button id="report-vehicle-failure" type="button">Mark vehicle failed</button>
+              <button id="report-vehicle-failure" type="button" data-i18n="incidents.markVehicle">Mark vehicle failed</button>
               <label>
-                Charging point unavailable
+                <span data-i18n="incidents.point">Charging point unavailable</span>
                 <select id="incident-charging-point"></select>
               </label>
-              <button id="report-charging-failure" type="button">Mark point unavailable</button>
+              <button id="report-charging-failure" type="button" data-i18n="incidents.markPoint">Mark point unavailable</button>
             </div>
             <div id="incident-list" class="compact-list"></div>
           </article>
 
           <article class="panel">
             <div>
-              <h3>Smart charging schedule</h3>
-              <p class="helper">Priority uses low battery and upcoming usage, with upcoming usage weighted first.</p>
+              <h3 data-i18n="schedule.title">Smart charging schedule</h3>
+              <p class="helper" data-i18n="schedule.helper">Priority uses low battery and upcoming usage, with upcoming usage weighted first.</p>
             </div>
             <div id="schedule-controls" class="schedule-controls"></div>
             <div id="operator-schedule" class="queue-list"></div>
@@ -212,20 +235,20 @@
 
         <article class="panel simulation-panel">
           <div>
-            <h3>What-if simulation</h3>
-            <p class="helper">The scenario starts from the current live state and runs on a copy. Live state is not overwritten.</p>
+            <h3 data-i18n="simulation.title">What-if simulation</h3>
+            <p class="helper" data-i18n="simulation.helper">The scenario starts from the current live state and runs on a copy. Live state is not overwritten.</p>
           </div>
           <div class="form-grid">
             <label>
-              Scenario
+              <span data-i18n="simulation.scenario">Scenario</span>
               <select id="scenario"></select>
             </label>
             <label>
-              Focus Hub
+              <span data-i18n="simulation.hub">Focus Hub</span>
               <select id="scenario-hub"></select>
             </label>
           </div>
-          <button id="run-simulation" type="button">Run hypothetical scenario</button>
+          <button id="run-simulation" type="button" data-i18n="simulation.run">Run hypothetical scenario</button>
           <div id="simulation-output" class="simulation-output">Run a scenario to inspect impact and recommendations.</div>
         </article>
       </section>

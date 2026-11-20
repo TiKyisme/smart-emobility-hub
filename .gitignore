@@ -6,3 +6,27 @@ node_modules/
 dist/
 coverage/
 *.log
+
+# Python caches (tests/e2e, report builder scripts)
+__pycache__/
+*.pyc
+
+# LaTeX build intermediates only. Report sources (.tex), editable diagrams and
+# final PDFs are deliberately NOT ignored; see docs/RELEASE_MANIFEST.md.
+*.aux
+*.lof
+*.lot
+*.toc
+*.out
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.xdv
+submission3/report_builder/out/
+submission3/report_builder/page_previews/
+
+# Local environment and credential files must never be committed
+.env
+.env.*
+!.env.example
+*.pem

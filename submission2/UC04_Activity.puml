@@ -1,0 +1,96 @@
+@startuml UC04_Activity
+
+title Activity Diagram - UC-04 Reserve Shared Vehicle
+
+!pragma useVerticalIf on
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 15
+skinparam dpi 160
+skinparam ArrowColor #222222
+skinparam ArrowThickness 1
+skinparam activity {
+  BackgroundColor white
+  BorderColor #222222
+  DiamondBackgroundColor white
+  DiamondBorderColor #222222
+  StartColor #111111
+  EndColor #111111
+  FontColor #111111
+}
+skinparam partition {
+  BackgroundColor white
+  BorderColor #333333
+  FontColor #111111
+}
+
+|Shared Vehicle User|
+start
+repeat
+  :Chọn Shared Vehicle
+  đang Available;
+
+  |System|
+  :Hiển thị Hub, trạng thái
+  và mức pin của xe;
+
+  |Shared Vehicle User|
+  if (Xác nhận đặt xe?) then (Có)
+    :Chọn "Reserve Shared Vehicle";
+  else (Hủy - A1)
+    :Hủy trước khi xác nhận;
+    |System|
+    :Không tạo reservation;
+    :Giữ nguyên trạng thái xe;
+    stop
+  endif
+
+  |System|
+  :Đọc lại trạng thái và
+  ngăn giữ chỗ đồng thời;
+  if (Kết quả kiểm tra?) then (Available)
+    :Tạo reservation gắn
+    với user và vehicle;
+    :Đổi trạng thái xe:
+    Available → Reserved;
+    :Tạm giữ xe cho user;
+    :Hiển thị thành công,
+    trạng thái Active và hạn giữ;
+
+    |Shared Vehicle User|
+    if (Pickup trước khi hết hạn?) then (Có)
+      :Tiếp tục đến Pick Up
+      Shared Vehicle - UC-06;
+      stop
+    else (Hết hạn trước pickup - A3)
+      |System|
+      :Đổi reservation
+      Active → Expired;
+      if (Xe vẫn Reserved?) then (Có)
+        :Đổi trạng thái xe
+        Reserved → Available;
+      else (Trạng thái đã đổi)
+        :Giữ nguyên trạng thái
+        vận hành hiện tại;
+      endif
+      :Hiển thị reservation
+      đã hết hạn;
+      stop
+    endif
+  elseif (Vehicle not Available - E1) then
+    :Từ chối reservation;
+  elseif (Concurrent conflict - E3) then
+    :Từ chối yêu cầu trùng;
+    :Thông báo xe đã được giữ;
+  else (State cannot be retrieved - E2)
+    :Không tạo reservation;
+    :Hiển thị lỗi và hướng dẫn thử lại;
+    stop
+  endif
+
+  |Shared Vehicle User|
+repeat while (Chọn xe khác? - A2) is (Có) not (Không)
+stop
+
+@enduml
