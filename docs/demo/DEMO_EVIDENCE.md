@@ -81,7 +81,7 @@ SUMMARY: 101 PASS / 0 FAIL / 101 checks
 
 Ảnh chụp SHA-256 của **152** tệp chưa theo dõi/bị bỏ qua (lấy trước mọi thay đổi) được so lại trước khi commit: **150 giống từng byte**. Hai khác biệt:
 
-- `docs/agent-handoff/manifest.json` — ghi chú làm việc cục bộ, được cập nhật có chủ đích ở lần phát hành trước (không phải bài của nhóm, không được đẩy lên).
+- Một tệp ghi chú làm việc cục bộ (nằm trong nhóm tệp LOCAL-ONLY của [manifest](../RELEASE_MANIFEST.md)) — được cập nhật có chủ đích ở lần phát hành trước; không phải bài của nhóm, không được đẩy lên.
 - `submission3/L03_13.pdf` — **chủ repo đã xóa qua Windows Explorer lúc 07:39 ngày 2026-11-20** (đang nằm trong Thùng rác). Đây là bản build lỗi trang 7; một bản giống hệt từng byte vẫn còn ở `submission3/report_builder/out/L03_13.pdf`.
 
 Không tệp nào trong `submission2/` hoặc `submission3/` bị công việc này sửa, di chuyển hay xóa.
