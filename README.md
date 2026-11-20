@@ -12,23 +12,29 @@ From the repository root (the folder that contains `index.html`):
 python -m http.server 5173 --bind 127.0.0.1
 ```
 
-Open **http://127.0.0.1:5173/**. Reload the page (F5) to reset all simulated data. Stop the server with Ctrl+C.
+Open **http://127.0.0.1:5173/** (Vietnamese by default; switch with *VI / EN*). Use **Đặt lại dữ liệu / Reset data** or reload the page to restore the seed data. Stop the server with Ctrl+C.
 For the reservation-expiry demo, open `http://127.0.0.1:5173/?holdSeconds=20` (default hold: 15 minutes).
 
 Presenter material (Vietnamese): [start here](docs/demo/START_HERE.md) · [8–12 minute demo script](docs/demo/DEMO_SCRIPT_8_TO_12_MIN.md) · [checklist](docs/demo/DEMO_CHECKLIST.md) · [test evidence](docs/demo/DEMO_EVIDENCE.md) · [lecturer FAQ](docs/demo/FAQ_FOR_LECTURER.md)
 
+## Reports
+
+| Submission | File |
+|---|---|
+| Submission #2 – requirements, use cases, activity/sequence diagrams, UI mockups | [submission2/Phase2_L03_13.pdf](submission2/Phase2_L03_13.pdf) |
+| Submission #3 – architecture, class and method design (submitted version) | [submission3/L03_13 (1).pdf](<submission3/L03_13 (1).pdf>) |
+
 ## What the MVP demonstrates
 
-| Area | Requirements | Where in the UI |
+| Page | Requirements | What can be done |
 |---|---|---|
-| Hub state, search, vehicle availability and battery | FR-01..FR-03 | Student workspace: Hub cards, *Find a suitable vehicle / Hub*, *Shared vehicles* |
-| Timed vehicle hold with expiry, pickup, return to a Hub with capacity | FR-04, FR-06, FR-07 | *Shared vehicles* table |
-| Parking reservation within capacity (physical + held spaces) | FR-05 | *Reserve parking* |
-| Shared and private-EV charging requests, smart priority schedule | FR-08, FR-09, FR-15 | *Charging requests*, *Smart charging schedule* |
-| Network monitoring, capacity risk, redistribution, incidents | FR-10..FR-14 | Operator workspace |
-| Five what-if scenarios on a copy of the live state, with recommendations | FR-16..FR-18 | *What-if simulation* |
-| Manual and 15-second automatic simulated updates | FR-19 | *Update simulated state*, *Start auto updates* |
-| Interface mode: Light/Dark and VI/EN | FR-20 | Header controls |
+| Student · Find & reserve | FR-01..FR-04, FR-06, FR-07 | Hub overview, vehicle search by Hub/battery/free charger/free parking, hold with live countdown, cancel, pick up, return to a Hub with capacity |
+| Student · Parking & charging | FR-05, FR-08, FR-09 | Hold/release parking spaces; charging requests for shared vehicles and private EVs; a free charger is assigned immediately by priority |
+| Operator · Network monitor | FR-10..FR-13 | KPIs, Hubs ranked by parking utilization, redistribution suggestion and coordination, fleet status |
+| Operator · Smart charging | FR-15 | Chargers and sessions, priority queue (needed soon first, then lowest battery), finish a session to hand the charger to the next request |
+| Operator · Incidents | FR-14 | Report vehicle failures and charger outages, then mark repaired / restore to put them back in service |
+| Operator · What-if simulation | FR-16..FR-18 | Five assignment scenarios on a copy of the live state with before/after impact and recommendations |
+| Top bar | FR-19, FR-20 | Manual and 15-second automatic simulated updates; Light/Dark and VI/EN |
 
 Out of scope by design: login/accounts, payment, real GPS/IoT, 3D maps, cloud services and a mandatory database. Known limitations are listed in the [lecturer FAQ](docs/demo/FAQ_FOR_LECTURER.md#10-hạn-chế-và-đánh-đổi-đã-biết).
 
@@ -44,17 +50,17 @@ Latest recorded results: [docs/demo/DEMO_EVIDENCE.md](docs/demo/DEMO_EVIDENCE.md
 ## Repository map
 
 ```text
-index.html                 page and static controls
-src/main.js                event wiring (controller)
-src/ui/                    rendering and VI/EN text
+index.html                 application shell, page sections and static controls
+src/main.js                event wiring and routing (controller)
+src/ui/                    shell rendering, student/operator views, VI/EN text
 src/services/              business rules: hub, reservation, charging, operator, what-if, simulator
-src/domain/, src/state/    statuses, result objects, in-memory store
+src/domain/, src/state/    statuses, result objects, ids, in-memory store
 src/data/                  simulated seed data
 tests/unit/                automated checks (npm test)
 tests/e2e/                 optional browser acceptance script
 docs/                      specification, architecture, decisions, traceability
 docs/demo/                 demo package and screenshots
-submission2/               Submission #2 UC-04 activity/sequence diagrams (PlantUML + PNG)
+submission2/, submission3/ published reports and UC-04 diagrams
 ```
 
 ## Project documents
@@ -63,5 +69,3 @@ submission2/               Submission #2 UC-04 activity/sequence diagrams (Plant
 - [Architecture](docs/ARCHITECTURE.md) · [Design decisions](docs/DECISIONS.md) · [Traceability](docs/TRACEABILITY.md) · [Implementation plan](docs/IMPLEMENTATION_PLAN.md)
 - [Source grounding](docs/SOURCE_GROUNDING.md) · [Generative AI usage declaration](docs/AI_USAGE_DECLARATION.md) · [Submission #1 checklist](docs/SUBMISSION_1_CHECKLIST.md) and [template](docs/SUBMISSION_1_REPORT_TEMPLATE.md)
 - [Release manifest](docs/RELEASE_MANIFEST.md) (which files are published, kept local or ignored) · [Release summary](docs/RELEASE_SUMMARY.md)
-
-Submission reports (PDF/LaTeX) contain the members' student IDs and are not published in this public repository unless the team decides otherwise; see the release manifest.

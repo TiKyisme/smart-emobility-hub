@@ -1,125 +1,115 @@
 # Kịch bản demo 8–12 phút
 
-Kịch bản chạy **liên tục trên một lần tải trang** (tab 1), riêng phần hết hạn giữ xe dùng tab 2. Mọi thông báo trong ô "Kỳ vọng" là chữ thật trên màn hình (giao diện English mặc định) và đã được phát lại tự động: kịch bản S11 trong `tests/e2e/browser_acceptance.py` (xem [DEMO_EVIDENCE.md](DEMO_EVIDENCE.md)). Giờ (`hh:mm:ss AM`) tùy lúc bạn bấm.
+Chạy **liên tục trên một lần tải trang** (tab 1); riêng phần hết hạn giữ xe dùng tab 2. Giao diện mặc định tiếng Việt. Mọi câu trong cột "Kỳ vọng" là thông báo thật trên màn hình (góc phải dưới) và đã được phát lại tự động bằng kịch bản S11 trong `tests/e2e/browser_acceptance.py` ([DEMO_EVIDENCE.md](DEMO_EVIDENCE.md)). Giờ `hh:mm:ss` tùy lúc bấm.
 
-**Chuẩn bị:** máy chủ đang chạy ([START_HERE.md](START_HERE.md)), tab 1 mở `http://127.0.0.1:5173/` vừa tải lại (F5), zoom trình duyệt 80–90% nếu màn chiếu nhỏ, **không** bật *Start auto updates* trước bước 8.
+**Chuẩn bị:** máy chủ đang chạy ([START_HERE.md](START_HERE.md)); tab 1 mở `http://127.0.0.1:5173/`, bấm **Đặt lại dữ liệu** (góc trái dưới) nếu đã thao tác trước đó; **không** bật *Tự động* trước bước 8.
 
-| Bản rút gọn 8 phút | Bỏ bước 3, ở bước 6 chỉ làm 6.1–6.3, ở bước 7 chỉ chạy 1 kịch bản. |
-|---|---|
+Bản rút gọn 8 phút: bỏ bước 3; ở bước 6 bỏ phần điều phối xe; ở bước 7 chỉ chạy 1 kịch bản.
 
 ---
 
-## Bước 0 — Mở đầu (0:00–0:40)
+## Bước 0 — Giới thiệu (0:00–0:40)
 
-> **Nói:** "Đây là MVP của Smart E-Mobility Hub: một trang web tĩnh HTML/CSS/JavaScript, dữ liệu mô phỏng trong bộ nhớ, kiến trúc phân lớp UI → Services → Domain/State → Simulated Data. Trang có hai không gian: Student và Operator."
+> "Đây là MVP Smart E-Mobility Hub: web tĩnh HTML/CSS/JavaScript, dữ liệu mô phỏng trong bộ nhớ, kiến trúc phân lớp UI → Services → Domain/State → Data. Thanh bên có hai cổng: **Cổng sinh viên** (2 trang) và **Cổng vận hành** (4 trang); thanh trên có cập nhật dữ liệu, chế độ tối và VI/EN."
 
-- Chỉ vào 4 thẻ Hub: **Metro Hub 4/8 occupied**, **Dormitory Hub 7/10**, **University Hub 5/12**, **Service Area Hub 3/6**.
-- **Ý nghĩa nghiệp vụ (FR-01):** sinh viên thấy ngay trạng thái chỗ đỗ, xe sẵn sàng và trụ sạc của từng Hub.
+Trang **Tìm & đặt xe**: 4 ô Hub — Metro Hub **4/8**, Dormitory Hub **7/10**, University Hub **5/12**, Service Area Hub **3/6** (FR-01).
 
-## Bước 1 — Tìm xe/Hub phù hợp (0:40–1:30) · FR-02, FR-03
-
-| Thao tác | Kỳ vọng |
-|---|---|
-| Ô **Find a suitable vehicle / Hub**: **Hub** = `Metro Hub`, **Minimum battery (%)** = `80` | Chỉ còn **EV-01 · Metro Hub · 82% battery** với nút **Reserve** |
-| *(tùy chọn)* **Hub** = `All Hubs`, **Minimum battery** = `0`, **Minimum parking spaces** = `5`, tick **Charging point required** | **Matching Hubs**: chỉ `University Hub · 7 parking · 1 charging`; xe **EV-05** |
-| Trả bộ lọc về `All Hubs`, `0`, `0`, bỏ tick | Danh sách đầy đủ |
-
-- **Ý nghĩa:** tìm kiếm dùng trạng thái hiện tại (xe *available*, mức pin, chỗ đỗ còn cấp phát, trụ sạc trống).
-
-## Bước 2 — Giữ xe → nhận xe → trả xe (1:30–3:00) · FR-04, FR-06, FR-07
-
-Bảng **Shared vehicles**, hàng **EV-01**:
+## Bước 1 — Tìm xe phù hợp (0:40–1:20) · FR-02, FR-03
 
 | Thao tác | Kỳ vọng |
 |---|---|
-| **Reserve** | Thông báo xanh: `EV-01 reserved for STUDENT-DEMO until hh:mm:ss AM. Pick it up before the hold expires.` · Status **Reserved** · cột hold **Active / Hold expiry: …** (15 phút sau) |
-| **Pick up** | `EV-01 picked up from Metro Hub. Return it to a Hub with free parking.` · Status **In use** · thẻ Metro **3/8 occupied** |
-| Ô chọn cạnh nút Return = `Dormitory Hub` → **Return** | `EV-01 returned to Dormitory Hub; the reservation is completed.` · EV-01 ở **Dormitory Hub**, **Available**, hold **Completed** · thẻ Dormitory **8/10 occupied** |
+| **Hub** = `Metro Hub`, **Pin tối thiểu (%)** = `80` | Bảng chỉ còn **EV-01 · 82% · Sẵn sàng** |
+| *(tùy chọn)* bỏ tick **Chỉ xe sẵn sàng** | Hiện đủ xe kèm trạng thái (EV-04 *Đang sạc*) |
+| Trả bộ lọc: `Tất cả Hub`, `0`, tick lại **Chỉ xe sẵn sàng** | Danh sách đầy đủ |
 
-- **Ý nghĩa:** lượt giữ tạm thời ngăn hai người cùng lấy một xe (NFR-02); chỉ người đang giữ mới nhận được xe; trả xe cập nhật vị trí và chỗ đỗ.
-- Có thể nói thêm: ô chọn Hub trả xe **giữ nguyên lựa chọn** kể cả khi trang tự cập nhật (lỗi cũ đã sửa).
+**Ý nghĩa:** tìm kiếm dựa trên trạng thái hiện tại; các ô *Có trụ trống / Còn chỗ đỗ* làm mờ Hub không phù hợp.
 
-## Bước 3 — Hết hạn giữ xe (3:00–3:50) · FR-04 luồng thay thế · *bỏ qua ở bản 8 phút*
-
-| Thao tác | Kỳ vọng |
-|---|---|
-| Mở **tab 2**: `http://127.0.0.1:5173/?holdSeconds=20` | Dòng phụ dưới "Shared vehicles": `Hold duration: 20 seconds (demo setting from the page URL).` |
-| **Reserve** EV-01, nói tiếp ~20 giây, không bấm gì | Thông báo đỏ tự xuất hiện: `Reservation hold expired before pickup: EV-01 is available again.` · Status **Available** · hold **Expired** |
-| Đóng tab 2, quay lại tab 1 | Tab 1 không bị ảnh hưởng (mỗi tab có trạng thái riêng) |
-
-- **Ý nghĩa:** hết hạn trước khi nhận xe → hệ thống tự giải phóng xe. Thời lượng 20 giây chỉ là tham số demo hiển thị công khai trên trang; mặc định vẫn là 15 phút (D-007, D-012).
-
-## Bước 4 — Sức chứa chỗ đỗ và từ chối trả xe (3:50–5:10) · FR-05, FR-07 (ngoại lệ), FR-12
+## Bước 2 — Giữ → nhận → trả xe (1:20–2:40) · FR-04, FR-06, FR-07
 
 | Thao tác | Kỳ vọng |
 |---|---|
-| Hàng **EV-05**: **Reserve** rồi **Pick up** | `EV-05 picked up from University Hub. Return it to a Hub with free parking.` |
-| Ô **Reserve parking**: **Selected Hub** = `Dormitory Hub` → **Reserve one parking space** 2 lần | `Parking space reserved at Dormitory Hub; 1 space left.` rồi `…; 0 spaces left.` |
-| Bấm lần 3 | Đỏ: `No parking capacity available at Dormitory Hub.` |
-| EV-05: chọn `Dormitory Hub` → **Return** | Đỏ: `Dormitory Hub has no free parking space; choose another Hub.` · EV-05 vẫn **In use** |
-| Kéo xuống bảng **Mobility Hub network and capacity risk** | Dòng đầu **Dormitory Hub · 10/10 used · 0 free · #1 · at capacity** |
-| EV-05: chọn `University Hub` → **Return** | `EV-05 returned to University Hub; the reservation is completed.` |
+| **Đặt giữ** ở dòng EV-01 | `Đã giữ EV-01 đến hh:mm:ss.` · thẻ **Chuyến đi của tôi**: *Đã giữ*, đồng hồ **15:00** đếm ngược · các nút Đặt giữ khác bị khóa (mỗi sinh viên một chuyến) |
+| **Nhận xe** | `Đã nhận EV-01 tại Metro Hub.` · ô Metro **3/8** |
+| **Trả xe tại** = `Dormitory Hub · trống 3` → **Trả xe** | `Đã trả EV-01 tại Dormitory Hub.` · ô Dormitory **8/10** · dòng *Chuyến trước: EV-01 → Dormitory Hub · Hoàn tất* |
 
-- **Ý nghĩa:** sức chứa = xe đang đỗ + chỗ đã giữ (D-004), nên hệ thống không bao giờ xác nhận vượt sức chứa (NFR-03); Hub đầy tự lên đầu bảng rủi ro.
+**Ý nghĩa:** lượt giữ tạm thời ngăn hai người cùng lấy một xe (NFR-02); chỉ người giữ mới nhận được xe; trả xe cập nhật vị trí và chỗ đỗ.
 
-## Bước 5 — Yêu cầu sạc và lịch sạc thông minh (5:10–6:50) · FR-08, FR-09, FR-15
-
-Ô **Charging requests** (**Request type** = `Shared vehicle`, **Hub** = `Metro Hub`):
+## Bước 3 — Hết hạn giữ và hủy giữ (2:40–3:30) · FR-04 luồng thay thế · *bỏ ở bản 8 phút*
 
 | Thao tác | Kỳ vọng |
 |---|---|
-| **Shared vehicle** = `EV-02 · 28% · Available` (ô pin khóa ở 28 — lấy từ dữ liệu xe) → **Submit charging request** | `Charging request for EV-02 added to the queue at Metro Hub.` |
-| Bấm **Submit charging request** lần nữa | Đỏ: `EV-02 already has a charging request in the queue.` |
-| **Request type** = `Private EV`, **Private EV label** = `Private EV A`, xóa trống **Battery level (%)** → **Reserve parking & schedule private EV** | Đỏ: `Enter a battery level from 0 to 100.` |
-| **Battery level** = `35` → bấm lại | `Parking held at Metro Hub and charging request for Private EV A queued. Apply the schedule to assign a charging point.` |
-| Label = `Private EV B`, battery = `70` → bấm | Tương tự cho `Private EV B` |
-| Xem **Current charging queue** | `3 queued · 0 scheduled`: EV-02 *priority 1072* (upcoming use), Private EV A *65*, Private EV B *30* |
-| Phần Operator → **Smart charging schedule** → **Apply schedule** của `Metro Hub` | `Charging schedule applied at Metro Hub: 2 newly assigned, 1 waiting, 0 on hold.` · **EV-02 → Assigned CP-01**, **Private EV A → Assigned CP-02**, **Private EV B → Waiting** · EV-02 thành **Charging** |
+| Tab 2: `http://127.0.0.1:5173/?holdSeconds=20` | Chân thẻ: `Thời gian giữ xe: 20 giây (thiết lập demo).` |
+| **Đặt giữ** EV-01, nói tiếp ~20 giây | Tự hiện thông báo đỏ `Hết thời gian giữ: EV-01 đã sẵn sàng trở lại.` · *Chuyến trước: EV-01 · Hết hạn* |
+| *(tùy chọn)* **Đặt giữ** EV-02 → **Hủy giữ** | `Đã hủy giữ EV-02.` |
+| Đóng tab 2 | Tab 1 không bị ảnh hưởng (mỗi tab có dữ liệu riêng) |
 
-- **Ý nghĩa:** ưu tiên = nhu cầu sử dụng sắp tới trước, sau đó pin thấp hơn; Metro chỉ có 2 trụ trống nên chỉ 2 yêu cầu được phân (không vượt công suất). Xe cá nhân giữ chỗ đỗ ngay khi đăng ký.
+**Ý nghĩa:** hết hạn trước khi nhận xe thì hệ thống tự trả xe về trạng thái sẵn sàng; 20 giây chỉ là tham số demo hiển thị công khai, mặc định 15 phút (D-007, D-012).
 
-## Bước 6 — Giám sát, điều phối và sự cố (6:50–8:40) · FR-10, FR-11, FR-13, FR-14
-
-| # | Thao tác | Kỳ vọng |
-|---|---|---|
-| 6.1 | Chỉ các chỉ số Operator | `Hubs monitored 4` · `Vehicles available 4/6` · `Charging points available 2/5` · `Open incidents 0` · `Queued charging 1` |
-| 6.2 | Khung đề xuất: "Consider redistributing vehicles from Dormitory Hub to University Hub. Move up to 2 vehicles based on current capacity." → **Coordinate one vehicle** | `EV-01 coordinated from Dormitory Hub to University Hub.` |
-| 6.3 | **Vehicle failure** = `EV-02` → **Mark vehicle failed** | `EV-02 marked failed and incident opened.` · lịch Metro: EV-02 **On hold: vehicle failed**, Private EV B **Plan CP-01** (CP-01 được giải phóng) |
-| 6.4 | **Apply schedule** (Metro) | `Charging schedule applied at Metro Hub: 1 newly assigned, 0 waiting, 1 on hold.` |
-| 6.5 | **Charging point unavailable** = `CP-02` → **Mark point unavailable** | `CP-02 marked unavailable and incident opened.` |
-| 6.6 | **Apply schedule** (Metro) | `No queued charging request can be assigned at Metro Hub now (1 waiting, 1 on hold).` · danh sách sự cố có 2 mục **Open**, chỉ số `Open incidents 2` |
-
-- **Ý nghĩa:** sự cố xe/trụ sạc tự động giải phóng trụ, đưa yêu cầu về hàng đợi; lịch sạc không bao giờ phân trụ cho xe đang hỏng/đang được giữ và không vượt số trụ còn hoạt động.
-
-## Bước 7 — What-if (8:40–10:00) · FR-16, FR-17, FR-18
-
-Ô **What-if simulation**, **Focus Hub** = `Metro Hub`:
+## Bước 4 — Sức chứa chỗ đỗ (3:30–4:50) · FR-05, FR-07 (ngoại lệ), FR-12
 
 | Thao tác | Kỳ vọng |
 |---|---|
-| **Scenario** = `Mobility Hub reaches full parking capacity` → **Run hypothetical scenario** | `Live state unchanged: yes` · `Parking occupied 19 → 24` · `Top capacity risk Dormitory Hub → Metro Hub` · đề xuất: `Redirect arrivals or parking requests from Metro Hub while capacity is constrained.` + đề xuất điều phối xe · thông báo `Hypothetical scenario evaluated. Live network state was not changed.` |
-| Chỉ lên thẻ Metro Hub | Vẫn **3/8 occupied · 2 reserved** — trạng thái thật không đổi |
-| *(bản 12 phút)* **Scenario** = `Surge in charging demand` → Run | `Charging queue 2 → 5` · đề xuất `Rebuild the smart charging schedule so low-battery and upcoming-usage requests are served first.` |
+| **Đặt giữ** EV-05 → **Nhận xe** | `Đã nhận EV-05 tại University Hub.` |
+| Trang **Đỗ xe & sạc** → **Hub** = `Dormitory Hub · trống 2` → **Giữ chỗ** 2 lần | `Đã giữ chỗ tại Dormitory Hub; còn 1 chỗ.` rồi `…; còn 0 chỗ.` |
+| **Giữ chỗ** lần 3 | Đỏ: `Dormitory Hub đã hết chỗ đỗ.` |
+| Trang **Tìm & đặt xe** → **Trả xe tại** `Dormitory Hub · hết chỗ` → **Trả xe** | Đỏ: `Dormitory Hub đã hết chỗ; hãy chọn Hub khác.` · chuyến vẫn *Đang sử dụng* |
+| Trang **Giám sát mạng lưới** | Dòng đầu **Dormitory Hub · 10/10 · giữ 2 · 100% · #1 · Hết chỗ** |
+| Về **Tìm & đặt xe** → trả tại `University Hub` | `Đã trả EV-05 tại University Hub.` |
 
-- Ba kịch bản còn lại có sẵn trong danh sách: `Sudden Metro arrival surge`, `Partial charging-point failures`, `Excessive vehicle concentration`.
-- **Ý nghĩa:** mô phỏng chạy trên bản sao sâu của trạng thái hiện tại; dòng "Live state unchanged" được kiểm chứng bằng so sánh ảnh chụp trạng thái trước/sau, không phải hằng số (D-013).
+**Ý nghĩa:** sức chứa = xe đang đỗ + chỗ đang giữ (D-004); hệ thống không bao giờ xác nhận vượt sức chứa (NFR-03).
 
-## Bước 8 — Cập nhật mô phỏng và tùy chỉnh giao diện (10:00–11:20) · FR-19, FR-20
+## Bước 5 — Yêu cầu sạc và sạc thông minh (4:50–6:40) · FR-08, FR-09, FR-15
+
+Trang **Đỗ xe & sạc**, thẻ **Yêu cầu sạc**:
 
 | Thao tác | Kỳ vọng |
 |---|---|
-| **Update simulated state** (góc phải trên) | Dải trạng thái: `Telemetry update: EV-01 battery is now 81%. · hh:mm:ss AM`; bảng xe EV-01 **81%** |
-| **Start auto updates** | `Automatic simulated updates started; the next update arrives in 15 seconds.` · ~15 giây sau dải trạng thái đổi sang `Parking sensor update: Metro Hub occupancy is now 4/8.` |
-| **Stop auto updates** | `Automatic simulated updates paused.` |
-| **Use dark mode** | Giao diện tối; nút đổi thành **Use light mode** |
-| **VI / EN** = `Tiếng Việt` | Toàn bộ nhãn, trạng thái và thông báo chuyển sang tiếng Việt (vd. tiêu đề "Tìm tài nguyên và hoàn thành chuyến đi"); dữ liệu giữ nguyên |
-| Chọn lại `English`, **Use light mode** | Trở về như cũ |
+| **Xe dùng chung** · Hub `Metro Hub · trụ trống 2` · Xe `EV-02 · 28%` → **Gửi yêu cầu sạc** | `EV-02 đang sạc tại CP-01.` (trụ trống được cấp ngay) |
+| **Xe cá nhân** · Biển số `51A-111.11` · Pin `35` → **Giữ chỗ & đặt lịch sạc** | `Đã giữ chỗ tại Metro Hub; 51A-111.11 đang sạc tại CP-02.` |
+| Biển số `51B-222.22` · Pin `60` → gửi | `Đã giữ chỗ tại Metro Hub; 51B-222.22 đang chờ sạc (#1).` (hết trụ) |
+| Biển số `51C-333.33` · Pin `10` · tick **Cần dùng sớm** → gửi | `Đã giữ chỗ tại Metro Hub; 51C-333.33 đang chờ sạc (#1).` — **vượt lên trước** 51B |
+| Trang **Sạc thông minh** | Hàng đợi: **51C-333.33** (ưu tiên 1090, #1) rồi **51B-222.22** (40, #2) |
+| **Sạc xong** ở dòng CP-01 | `EV-02 đã sạc xong; 51C-333.33 được chuyển vào CP-01.` |
 
-- **Ý nghĩa:** bộ mô phỏng thay cho cảm biến/IoT thật (được đề bài cho phép); chế độ giao diện gồm sáng/tối và VI/EN theo làm rõ của giảng viên ở Submission #2.
+**Ý nghĩa:** điểm ưu tiên = cần dùng sớm (+1000) + (100 − % pin); trụ trống luôn được cấp cho yêu cầu ưu tiên nhất, không bao giờ vượt số trụ (D-015). Xe dùng chung lấy pin từ dữ liệu xe, chỉ hiện xe đủ điều kiện (D-008, D-009).
 
-## Bước 9 — Kết (11:20–12:00)
+## Bước 6 — Giám sát, điều phối và xử lý sự cố (6:40–8:40) · FR-10, FR-11, FR-13, FR-14
 
-> **Nói:** "Chúng em có 47 kiểm thử đơn vị chạy bằng `npm test` (không cần thư viện) và một bộ kiểm thử trình duyệt thật 93 kiểm tra trên Chrome và Edge, gồm cả việc phát lại đúng kịch bản vừa demo. Phạm vi MVP không có đăng nhập, thanh toán, CSDL hay IoT thật — đúng ràng buộc đề bài."
+| Thao tác | Kỳ vọng |
+|---|---|
+| Trang **Giám sát mạng lưới**: các chỉ số | Hub `4` · Xe sẵn sàng `5/6` · Trụ trống `2/5` · Sự cố đang mở `0` · Chờ sạc `1` |
+| Thẻ **Điều phối xe** (`Dormitory Hub → University Hub`, tối đa 2 xe) → **Điều phối 1 xe** | `Đã điều phối EV-01 từ Dormitory Hub đến University Hub.` |
+| Trang **Sự cố** → Trụ sạc `CP-02` → **Báo trụ ngừng hoạt động** | `Đã báo CP-02 ngừng hoạt động (INC-001).` (51A-111.11 bị đưa lại hàng đợi) |
+| Phương tiện `EV-03` → **Báo xe hỏng** | `Đã báo hỏng EV-03 (INC-002).` · danh sách: 2 sự cố *Đang mở* |
+| INC-001 → **Khôi phục trụ** | `CP-02 hoạt động trở lại; 51A-111.11 được chuyển vào sạc.` |
+| INC-002 → **Đã sửa xong** | `EV-03 đã sửa xong, sẵn sàng tại Dormitory Hub.` · `0 đang mở · 2 đã xử lý` |
+
+**Ý nghĩa:** sự cố được ghi nhận **và xử lý xong**: xe/trụ quay lại phục vụ, trụ được cấp ngay cho yêu cầu đang chờ (D-016).
+
+## Bước 7 — Mô phỏng What-if (8:40–9:50) · FR-16, FR-17, FR-18
+
+Trang **Mô phỏng What-if**, **Hub trọng tâm** = `Metro Hub`:
+
+| Thao tác | Kỳ vọng |
+|---|---|
+| **Kịch bản** = `Mobility Hub đầy chỗ đỗ` → **Chạy mô phỏng** | Nhãn **Dữ liệu thật không đổi** · bảng *Trước/Sau*: Xe đang đỗ `19 → 24`, Hub rủi ro cao nhất `Dormitory Hub → Metro Hub` (dòng thay đổi được tô màu) · đề xuất `Điều hướng xe đến khỏi Metro Hub.` |
+| *(bản 12 phút)* `Nhu cầu sạc tăng đột biến` → chạy | Chờ sạc `1 → 4` · đề xuất `Ưu tiên sạc xe pin thấp và xe cần dùng sớm.` |
+
+Ba kịch bản còn lại có trong danh sách. **Ý nghĩa:** mô phỏng chạy trên bản sao, áp dụng cùng quy tắc như hệ thống thật; "Dữ liệu thật không đổi" được kiểm chứng bằng so sánh ảnh chụp trạng thái (D-013).
+
+## Bước 8 — Cập nhật mô phỏng và chế độ giao diện (9:50–11:10) · FR-19, FR-20
+
+| Thao tác | Kỳ vọng |
+|---|---|
+| **Cập nhật dữ liệu** | Dải trạng thái: `Telemetry: pin EV-01 còn 81%. · hh:mm:ss` |
+| **Tự động: tắt** → bấm | `Đã bật cập nhật tự động: mỗi 15 giây.` · ~15 giây sau dải trạng thái đổi (`Cảm biến chỗ đỗ: Metro Hub 4/8.`) |
+| **Tự động: bật** → bấm | `Đã tắt cập nhật tự động.` |
+| **Chế độ tối**, rồi **VI / EN** = `EN` | Giao diện tối, toàn bộ chữ sang tiếng Anh, dữ liệu giữ nguyên |
+| Chọn lại `VI`, bấm **Chế độ sáng** | Trở lại như cũ |
+
+## Bước 9 — Kết (11:10–12:00)
+
+> "Nhóm có 60 kiểm thử đơn vị (`npm test`, không cần thư viện) và 101 kiểm tra trên trình duyệt thật Chrome/Edge, gồm phát lại đúng kịch bản này. MVP không có đăng nhập, thanh toán, CSDL hay IoT thật — đúng ràng buộc đề bài."
 
 ---
 
@@ -127,8 +117,8 @@ Bảng **Shared vehicles**, hàng **EV-01**:
 
 | Tình huống | Xử lý |
 |---|---|
-| Số liệu khác kịch bản (bấm thừa) | Nói "em tải lại dữ liệu gốc", bấm **F5**, làm lại **bước đang dở**. Mỗi bước vẫn chạy được từ trang mới; khác biệt: bước 4 cần giữ **3** chỗ ở Dormitory (7/10); bước 5 danh sách xe Metro có thêm EV-01; bước 6.2 đề xuất chuyển **EV-03** từ Dormitory sang University. |
-| Lỡ bật auto updates | Bấm **Stop auto updates**; nếu số liệu đã lệch thì F5. |
-| Hết hạn giữ không hiện sau 20 giây | Tab 2 phải có `?holdSeconds=20`; dòng "Hold duration" phải ghi 20 seconds. Nếu vẫn lỗi: bỏ bước 3, nói về kiểm thử `FR-04 expiry boundary` trong `tests/unit/reservationService.test.js`. |
-| Giảng viên hỏi "hai sinh viên cùng giữ một xe?" | UI dùng một danh tính demo (D-003) nên ẩn thao tác của người khác; quy tắc được kiểm thử tự động: `NFR-02: a second student cannot reserve…`, `AT-06: pickup requires the same student's…`. |
+| Số liệu lệch kịch bản (bấm thừa) | Bấm **Đặt lại dữ liệu** rồi làm lại **bước đang dở**. Từ dữ liệu gốc: bước 4 cần giữ **3** chỗ ở Dormitory (7/10); bước 5 ô Xe có thêm EV-01; bước 6 điều phối **EV-03**. |
+| Lỡ bật tự động | Bấm **Tự động: bật** để tắt; nếu số liệu đã lệch thì **Đặt lại dữ liệu**. |
+| Thông báo biến mất trước khi kịp đọc | Thông báo tự ẩn sau 8 giây; kết quả vẫn thể hiện ở bảng/thẻ tương ứng. |
+| Giảng viên hỏi "hai sinh viên cùng giữ một xe?" | UI dùng một danh tính demo (D-003); quy tắc có kiểm thử: `NFR-02: a second student cannot reserve…`, `AT-06: pickup requires the same student's…`. |
 | Trang trắng | Xem [START_HERE.md mục 6](START_HERE.md#6-xử-lý-sự-cố). |

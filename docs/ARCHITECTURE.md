@@ -12,10 +12,12 @@ The lecturer slides present multiple architectural views (4+1) and architectural
 
 Responsibilities:
 
-- render Student and Operator views (`src/ui/render.js`);
-- collect user interaction and call services (`src/main.js`);
-- display current state, errors, recommendations, and simulation results;
-- interface mode: Light/Dark and VI/EN text (`src/ui/i18n.js`, D-011).
+- application shell with a sidebar for the two portals and six pages, selected through the URL hash (`#find`, `#services`, `#network`, `#charging`, `#incidents`, `#whatif`) — `src/ui/render.js`;
+- Student portal views: Find & reserve, Parking & charging — `src/ui/views/student.js`;
+- Operator portal views: Network monitor, Smart charging, Incidents, What-if — `src/ui/views/operator.js`;
+- collect user interaction and call services (`src/main.js`, one delegated click handler per action);
+- display current state, short success/error notifications (toast), recommendations and simulation results;
+- interface mode: Light/Dark and VI/EN text (`src/ui/i18n.js`, D-011); shared markup helpers in `src/ui/dom.js`.
 
 ### Application / Business Services layer
 
@@ -24,9 +26,9 @@ Responsibilities:
 Responsibilities:
 
 - find suitable resources (`hubService.js`);
-- reservation workflow: hold, expiry, pickup, return, parking (`reservationService.js`);
-- charging requests and smart scheduling (`chargingService.js`);
-- operator monitoring, capacity risk, incidents, redistribution (`operatorService.js`);
+- reservation workflow: hold, expiry, cancel, pickup, return, parking holds (`reservationService.js`);
+- charging requests, automatic priority allocation, session completion, cancellation (`chargingService.js`);
+- operator monitoring, capacity risk, incidents and their resolution, redistribution (`operatorService.js`);
 - what-if simulation orchestration (`simulationService.js`);
 - simulated state updates (`simulatorService.js`).
 
@@ -71,7 +73,7 @@ At a high level:
 
 ```text
 Browser
-  -> Presentation/UI   (index.html, main.js, ui/render.js, ui/i18n.js)
+  -> Presentation/UI   (index.html, main.js, ui/render.js, ui/views/*.js, ui/i18n.js, ui/dom.js)
   -> Business Services (services/*.js)
   -> Domain State      (domain/*.js, state/store.js)
   -> Simulated Data    (data/simulatedData.js)
@@ -83,6 +85,6 @@ Because the assignment permits a lightweight MVP with hard-coded data, the minim
 
 ## 6. Verification
 
-- `tests/unit/*.test.js` — Node built-in test runner (`npm test`), no dependencies: service rules, i18n completeness, DOM hooks and `node --check` of every module.
-- `tests/e2e/browser_acceptance.py` — optional Playwright run against the real page in Chrome/Edge, covering the demo paths of AT-01..AT-20.
+- `tests/unit/*.test.js` — Node built-in test runner (`npm test`), no dependencies: service rules, i18n completeness, DOM hooks, navigation, square-corner style rule and `node --check` of every module.
+- `tests/e2e/browser_acceptance.py` — optional Playwright run against the real page in Chrome/Edge, covering the demo paths of AT-01..AT-20 and replaying the demo script.
 - `tests/ACCEPTANCE_TESTS.md` — the manual acceptance cases.
