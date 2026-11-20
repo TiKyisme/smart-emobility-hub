@@ -3,6 +3,8 @@
 
 Starts `python -m http.server` on a free loopback port from the repository root, drives the
 real page in an installed Chrome or Edge through Playwright, and prints PASS/FAIL per check.
+The interface starts in Vietnamese (D-011), so expected messages are Vietnamese unless a
+scenario switches to English.
 
 Usage (from the repository root):
     python tests/e2e/browser_acceptance.py                 # headless, screenshots -> docs/demo/screenshots
@@ -24,13 +26,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SCENARIOS = [
-    "metro_arrival_surge",
-    "hub_full",
-    "charging_demand_surge",
-    "charging_point_failures",
-    "vehicle_concentration",
-]
+SCENARIOS = ["metro_arrival_surge", "hub_full", "charging_demand_surge", "charging_point_failures", "vehicle_concentration"]
 
 
 class Report:
@@ -60,9 +56,7 @@ def static_server():
     port = free_port()
     process = subprocess.Popen(
         [sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1"],
-        cwd=ROOT,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     base = f"http://127.0.0.1:{port}"
     try:
@@ -100,226 +94,263 @@ class App:
         self.page = page
         self.base = base
 
-    def open(self, query: str = "") -> None:
-        self.page.goto(f"{self.base}/{query}", wait_until="networkidle")
-        self.page.wait_for_selector("#hub-grid .hub-card")
+    def open(self, query: str = "", page: str = "find") -> None:
+        # Leave the document first: a URL that differs only in its #hash would not reload the
+        # page, and every scenario must start from the seed data.
+        self.page.goto("about:blank")
+        self.page.goto(f"{self.base}/{query}#{page}", wait_until="networkidle")
+        self.page.wait_for_selector(f'section.page[data-page="{page}"]:not([hidden])')
+
+    def go(self, page: str) -> None:
+        self.page.click(f'.nav-link[data-page="{page}"]')
+        self.page.wait_for_selector(f'section.page[data-page="{page}"]:not([hidden])')
 
     def text(self, selector: str) -> str:
         return self.page.inner_text(selector).strip()
 
-    def feedback(self) -> str:
-        return self.text("#feedback")
+    def toast(self) -> str:
+        return self.text("#toast-text") if self.page.is_visible("#toast") else ""
 
-    def feedback_ok(self) -> bool:
-        return "feedback-success" in (self.page.get_attribute("#feedback", "class") or "")
+    def toast_ok(self) -> bool:
+        return "toast-success" in (self.page.get_attribute("#toast", "class") or "")
 
-    def row(self, vehicle_id: str):
-        return self.page.locator(f'#vehicle-rows tr[data-vehicle-id="{vehicle_id}"]')
+    def close_toast(self) -> None:
+        if self.page.is_visible("#toast"):
+            self.page.click("#toast-close")
 
-    def cell(self, vehicle_id: str, index: int) -> str:
-        return self.row(vehicle_id).locator("td").nth(index).inner_text().strip()
+    def tile(self, hub_id: str) -> str:
+        return self.text(f'#hub-tiles [data-hub-id="{hub_id}"]')
 
-    def status(self, vehicle_id: str) -> str:
-        return self.cell(vehicle_id, 3)
+    def trip_state(self) -> str | None:
+        locator = self.page.locator("#my-trip [data-trip-state]")
+        return locator.get_attribute("data-trip-state") if locator.count() else None
 
-    def hub_card(self, hub_id: str) -> str:
-        return self.text(f'#hub-grid [data-hub-id="{hub_id}"]')
+    def act(self, action: str, **data: str) -> None:
+        selector = f'[data-action="{action}"]' + "".join(f'[data-{key}="{value}"]' for key, value in data.items())
+        self.page.locator(selector).first.click()
 
-    def click_action(self, vehicle_id: str, action: str) -> None:
-        self.row(vehicle_id).locator(f'button[data-action="{action}"]').click()
+    def reserve(self, vehicle_id: str) -> None:
+        self.act("reserve-vehicle", **{"vehicle-id": vehicle_id})
 
-    def reserve_and_pick_up(self, vehicle_id: str) -> None:
-        self.click_action(vehicle_id, "reserve-vehicle")
-        self.click_action(vehicle_id, "pickup-vehicle")
+    def return_to(self, hub_id: str) -> None:
+        self.page.select_option("#return-hub", hub_id)
+        self.page.locator('[data-action="return-vehicle"]').click()
 
-    def return_to(self, vehicle_id: str, hub_id: str) -> None:
-        self.row(vehicle_id).locator("select").select_option(hub_id)
-        self.click_action(vehicle_id, "return-vehicle")
+    def fleet_status(self, vehicle_id: str) -> str:
+        return self.text(f'#fleet-table tr[data-vehicle-id="{vehicle_id}"] [data-status]')
 
-    def shot(self, directory: Path | None, name: str, selector: str | None = None) -> None:
+    def submit_shared(self, hub_id: str, vehicle_id: str) -> None:
+        self.page.click('[data-charging-type="shared"]')
+        self.page.select_option("#charging-hub", hub_id)
+        self.page.select_option("#charging-vehicle", vehicle_id)
+        self.page.click("#submit-charging")
+
+    def submit_private(self, hub_id: str, label: str, battery: str, soon: bool = False) -> None:
+        self.page.click('[data-charging-type="private"]')
+        self.page.select_option("#charging-hub", hub_id)
+        self.page.fill("#private-vehicle-label", label)
+        self.page.fill("#charging-battery", battery)
+        self.page.set_checked("#upcoming-usage", soon)
+        self.page.click("#submit-charging")
+
+    def shot(self, directory: Path | None, name: str) -> None:
         if directory is None:
             return
-        target = directory / name
-        if selector:
-            self.page.locator(selector).screenshot(path=str(target))
-        else:
-            self.page.screenshot(path=str(target))
+        self.close_toast()
+        self.page.evaluate("window.scrollTo(0, 0)")
+        self.page.screenshot(path=str(directory / name))
 
 
 def scenario_discover(app: App, report: Report, shots: Path | None) -> None:
     s = "S1 discover (AT-01..03)"
     app.open()
-    report.check(s, "four Hub cards rendered", app.page.locator("#hub-grid .hub-card").count() == 4)
-    report.check(s, "Metro card shows 4/8 occupied", "4/8 occupied" in app.hub_card("H-METRO"), app.hub_card("H-METRO"))
-    report.check(s, "vehicle table lists six vehicles with battery and status", app.page.locator("#vehicle-rows tr").count() == 6 and app.cell("EV-01", 2) == "82%")
+    report.check(s, "Vietnamese interface by default (D-011)", app.page.get_attribute("html", "lang") == "vi" and app.text("#page-title") == "Tìm & đặt xe")
+    report.check(s, "four Hub tiles; Metro 4/8 parking", app.page.locator("#hub-tiles .tile").count() == 4 and "4/8" in app.tile("H-METRO"), app.tile("H-METRO"))
+    rows = app.page.locator("#search-results tbody tr")
+    report.check(s, "available vehicles listed with battery and status", rows.count() == 5 and "82%" in app.text('#search-results tr[data-vehicle-id="EV-01"]'))
+    app.page.uncheck("#only-available")
+    report.check(s, "all six vehicles with statuses when 'available only' is off", rows.count() == 6 and "Đang sạc" in app.text('#search-results tr[data-vehicle-id="EV-04"]'))
+    app.page.check("#only-available")
     app.page.select_option("#vehicle-search-hub", "H-METRO")
     app.page.fill("#minimum-battery", "80")
-    results = app.page.locator("#search-results .result-row")
-    report.check(s, "search Metro + battery >= 80 returns only EV-01", results.count() == 1 and results.first.get_attribute("data-vehicle-id") == "EV-01")
-    app.page.fill("#minimum-battery", "0")
+    report.check(s, "Metro + battery >= 80% finds EV-01 only", rows.count() == 1 and rows.first.get_attribute("data-vehicle-id") == "EV-01")
     app.page.select_option("#vehicle-search-hub", "")
-    app.shot(shots, "01_overview_en_light.png")
+    app.page.fill("#minimum-battery", "0")
+    app.page.check("#charging-required")
+    dimmed = app.page.locator("#hub-tiles .tile.is-dimmed").all()
+    report.check(s, "Hub filter 'free charger' dims Dormitory (no free charger)", len(dimmed) == 1 and dimmed[0].get_attribute("data-hub-id") == "H-DORM")
+    app.page.uncheck("#charging-required")
 
 
-def scenario_lifecycle(app: App, report: Report, shots: Path | None) -> None:
+def scenario_trip(app: App, report: Report, shots: Path | None) -> None:
     s = "S2 reserve-pickup-return (AT-04,06,07)"
     app.open()
-    report.check(s, "default hold duration shown as 15 minutes", app.text("#hold-duration") == "Hold duration: 15 minutes.", app.text("#hold-duration"))
-    app.click_action("EV-01", "reserve-vehicle")
-    report.check(s, "reserve feedback names vehicle, student and expiry", app.feedback().startswith("EV-01 reserved for STUDENT-DEMO until") and app.feedback_ok(), app.feedback())
-    report.check(s, "EV-01 becomes Reserved with an Active hold", app.status("EV-01") == "Reserved" and app.cell("EV-01", 4).startswith("Active"), app.cell("EV-01", 4))
-    app.click_action("EV-01", "pickup-vehicle")
-    report.check(s, "pickup feedback and In use status", app.feedback().startswith("EV-01 picked up from Metro Hub") and app.status("EV-01") == "In use", app.feedback())
-    report.check(s, "Metro physical occupancy 4 -> 3 after pickup", "3/8 occupied" in app.hub_card("H-METRO"), app.hub_card("H-METRO"))
-    app.row("EV-01").locator("select").select_option("H-DORM")
+    report.check(s, "hold time shown as 15 minutes", app.text("#hold-duration") == "Thời gian giữ xe: 15 phút.", app.text("#hold-duration"))
+    app.reserve("EV-01")
+    report.check(s, "reserve feedback with expiry time", app.toast().startswith("Đã giữ EV-01 đến") and app.toast_ok(), app.toast())
+    countdown = app.text("#my-trip [data-countdown]")
+    report.check(s, "trip card shows the hold and a live countdown", app.trip_state() == "active" and countdown in ("15:00", "14:59", "14:58"), countdown)
+    report.check(s, "D-014: other Reserve buttons disabled during a trip", app.page.locator('#search-results [data-action="reserve-vehicle"]:disabled').count() >= 3)
+    app.shot(shots, "01_find_trip.png")
+    app.act("pickup-vehicle", **{"vehicle-id": "EV-01"})
+    report.check(s, "pickup feedback; Metro 3/8", app.toast() == "Đã nhận EV-01 tại Metro Hub." and "3/8" in app.tile("H-METRO"), app.toast())
+    app.page.select_option("#return-hub", "H-DORM")
     app.page.click("#simulate-update")
-    kept = app.row("EV-01").locator("select").input_value()
-    report.check(s, "REGRESSION: chosen return Hub survives a re-render", kept == "H-DORM", f"select value after re-render: {kept}")
-    app.shot(shots, "02_vehicle_lifecycle.png", "#vehicle-rows")
-    app.click_action("EV-01", "return-vehicle")
-    report.check(s, "return feedback names destination", app.feedback() == "EV-01 returned to Dormitory Hub; the reservation is completed.", app.feedback())
-    report.check(s, "EV-01 Available at Dormitory, reservation Completed", app.status("EV-01") == "Available" and app.cell("EV-01", 1) == "Dormitory Hub" and app.cell("EV-01", 4).startswith("Completed"), app.cell("EV-01", 4))
-    report.check(s, "Dormitory physical occupancy 7 -> 8 after return", "8/10 occupied" in app.hub_card("H-DORM"), app.hub_card("H-DORM"))
+    kept = app.page.input_value("#return-hub")
+    report.check(s, "REGRESSION: chosen return Hub survives a re-render", kept == "H-DORM", kept)
+    app.page.locator('[data-action="return-vehicle"]').click()
+    report.check(s, "return feedback; Dormitory 8/10", app.toast() == "Đã trả EV-01 tại Dormitory Hub." and "8/10" in app.tile("H-DORM"), app.toast())
+    report.check(s, "trip closed; last trip shown as completed", app.trip_state() is None and "Hoàn tất" in app.text("#my-trip [data-last-trip]"))
 
 
-def scenario_expiry(app: App, report: Report, shots: Path | None) -> None:
-    s = "S3 hold expiry (AT-04 alt.)"
+def scenario_expiry_and_cancel(app: App, report: Report, shots: Path | None) -> None:
+    s = "S3 hold expiry and cancel (AT-04 alt.)"
     app.open("?holdSeconds=10")
-    report.check(s, "demo hold duration is visible", "10 seconds (demo setting" in app.text("#hold-duration"), app.text("#hold-duration"))
-    app.click_action("EV-01", "reserve-vehicle")
-    report.check(s, "EV-01 reserved", app.status("EV-01") == "Reserved")
-    app.page.wait_for_function(
-        "() => document.querySelector('#vehicle-rows tr[data-vehicle-id=\"EV-01\"] td:nth-child(4)').innerText.trim() === 'Available'",
-        timeout=20_000,
-    )
-    report.check(s, "after expiry EV-01 is Available and the hold shows Expired", app.status("EV-01") == "Available" and app.cell("EV-01", 4).startswith("Expired"), app.cell("EV-01", 4))
-    report.check(s, "expiry feedback is shown without user action", app.feedback() == "Reservation hold expired before pickup: EV-01 is available again.", app.feedback())
+    report.check(s, "demo hold time visible", app.text("#hold-duration") == "Thời gian giữ xe: 10 giây (thiết lập demo).", app.text("#hold-duration"))
+    app.reserve("EV-01")
+    app.page.wait_for_function("() => !document.querySelector('#my-trip [data-trip-state]')", timeout=20_000)
+    report.check(s, "hold expires by itself with feedback", app.toast() == "Hết thời gian giữ: EV-01 đã sẵn sàng trở lại." and not app.toast_ok(), app.toast())
+    report.check(s, "last trip shown as expired; EV-01 reservable again", "Hết hạn" in app.text("[data-last-trip]") and app.page.locator('#search-results [data-vehicle-id="EV-01"] [data-action]').is_enabled())
+    app.reserve("EV-02")
+    app.act("cancel-hold", **{"vehicle-id": "EV-02"})
+    report.check(s, "hold cancelled before pickup (UC-04 A1)", app.toast() == "Đã hủy giữ EV-02." and app.trip_state() is None, app.toast())
     app.open("?holdSeconds=5")
-    report.check(s, "out-of-range holdSeconds is ignored (default 15 minutes)", app.text("#hold-duration") == "Hold duration: 15 minutes.", app.text("#hold-duration"))
+    report.check(s, "out-of-range holdSeconds ignored", app.text("#hold-duration") == "Thời gian giữ xe: 15 phút.", app.text("#hold-duration"))
 
 
 def scenario_capacity(app: App, report: Report, shots: Path | None) -> None:
     s = "S4 parking capacity (AT-05,07,12)"
     app.open()
-    app.reserve_and_pick_up("EV-01")
+    app.reserve("EV-01")
+    app.act("pickup-vehicle", **{"vehicle-id": "EV-01"})
+    app.go("services")
     app.page.select_option("#parking-hub", "H-DORM")
     messages = []
     for _ in range(3):
         app.page.click("#reserve-parking")
-        messages.append(app.feedback())
-    report.check(s, "three parking holds accepted at Dormitory", messages[-1] == "Parking space reserved at Dormitory Hub; 0 spaces left.", " / ".join(messages))
+        messages.append(app.toast())
+    report.check(s, "three spaces held at Dormitory", messages[-1] == "Đã giữ chỗ tại Dormitory Hub; còn 0 chỗ.", " / ".join(messages))
     app.page.click("#reserve-parking")
-    report.check(s, "fourth parking hold rejected", app.feedback() == "No parking capacity available at Dormitory Hub." and not app.feedback_ok(), app.feedback())
-    app.return_to("EV-01", "H-DORM")
-    report.check(s, "return to the full Dormitory is refused", app.feedback() == "Dormitory Hub has no free parking space; choose another Hub." and app.status("EV-01") == "In use", app.feedback())
-    first = app.page.locator("#operator-hub-rows tr").first
-    report.check(s, "Dormitory ranked #1 and flagged at capacity", first.get_attribute("data-hub-id") == "H-DORM" and "at capacity" in first.inner_text(), first.inner_text())
-    app.shot(shots, "04_capacity_risk.png", "#operator-hub-rows")
-    app.return_to("EV-01", "H-CAMPUS")
-    report.check(s, "return to University succeeds", app.feedback().startswith("EV-01 returned to University Hub") and app.cell("EV-01", 1) == "University Hub", app.feedback())
+    report.check(s, "fourth hold refused", app.toast() == "Dormitory Hub đã hết chỗ đỗ." and not app.toast_ok(), app.toast())
+    app.go("find")
+    report.check(s, "return list marks Dormitory as full", "Dormitory Hub · hết chỗ" in app.page.locator("#return-hub").inner_text())
+    app.return_to("H-DORM")
+    report.check(s, "return to the full Dormitory refused", app.toast() == "Dormitory Hub đã hết chỗ; hãy chọn Hub khác." and app.trip_state() == "in_use", app.toast())
+    app.go("network")
+    first = app.page.locator("#network-table tbody tr").first
+    report.check(s, "Dormitory ranked #1 and flagged full", first.get_attribute("data-hub-id") == "H-DORM" and "Hết chỗ" in first.inner_text(), first.inner_text())
+    app.go("services")
+    app.page.locator('[data-action="cancel-parking"]').first.click()
+    report.check(s, "a parking hold can be released", app.toast() == "Đã hủy giữ chỗ tại Dormitory Hub.", app.toast())
+    app.go("find")
+    app.return_to("H-CAMPUS")
+    report.check(s, "return to University succeeds", app.toast() == "Đã trả EV-01 tại University Hub.", app.toast())
 
 
 def scenario_charging(app: App, report: Report, shots: Path | None) -> None:
     s = "S5 charging priority (AT-08,09,15)"
-    app.open()
+    app.open(page="services")
     app.page.select_option("#charging-hub", "H-METRO")
-    app.page.select_option("#charging-vehicle", "EV-01")
-    battery = app.page.locator("#charging-battery")
-    report.check(s, "shared request uses the recorded battery (field locked to 82)", battery.is_disabled() and battery.input_value() == "82", battery.input_value())
-    app.page.click("#submit-charging")
-    report.check(s, "EV-01 queued", app.feedback() == "Charging request for EV-01 added to the queue at Metro Hub.", app.feedback())
-    app.page.click("#submit-charging")
-    report.check(s, "duplicate request for EV-01 rejected", app.feedback() == "EV-01 already has a charging request in the queue." and not app.feedback_ok(), app.feedback())
-    app.page.select_option("#charging-vehicle", "EV-02")
-    app.page.click("#submit-charging")
-    report.check(s, "EV-02 queued", app.feedback_ok(), app.feedback())
-    app.page.select_option("#charging-type", "private")
-    report.check(s, "private EV battery field is editable", app.page.locator("#charging-battery").is_enabled())
-    app.page.fill("#private-vehicle-label", "Private EV Demo")
-    app.page.fill("#charging-battery", "")
-    app.page.click("#schedule-private")
-    report.check(s, "empty private battery rejected", app.feedback() == "Enter a battery level from 0 to 100." and not app.feedback_ok(), app.feedback())
-    app.page.fill("#charging-battery", "35")
-    app.page.click("#schedule-private")
-    report.check(s, "private EV parking held and request queued", app.feedback().startswith("Parking held at Metro Hub and charging request for Private EV Demo queued."), app.feedback())
-    app.page.click('#schedule-controls button[data-hub-id="H-METRO"]')
-    report.check(s, "schedule applied: 2 assigned, 1 waiting", app.feedback() == "Charging schedule applied at Metro Hub: 2 newly assigned, 1 waiting, 0 on hold.", app.feedback())
-    block = app.text('#operator-schedule [data-hub-id="H-METRO"]')
-    lines = [line for line in block.splitlines() if line.strip()]
-    order = [line for line in lines if line in ("EV-02", "Private EV Demo", "EV-01")]
-    report.check(s, "priority order EV-02 (CP-01), Private EV (CP-02), EV-01 waiting", order == ["EV-02", "Private EV Demo", "EV-01"] and "Assigned CP-01" in block and "Assigned CP-02" in block and "Waiting" in block, block.replace("\n", " / "))
-    report.check(s, "EV-02 status becomes Charging", app.status("EV-02") == "Charging")
-    app.shot(shots, "03_charging_schedule.png", "#operator-schedule")
+    options = app.page.locator("#charging-vehicle option").all_inner_texts()
+    report.check(s, "only eligible vehicles are offered", options == ["EV-01 · 82%", "EV-02 · 28%"], str(options))
+    app.submit_shared("H-METRO", "EV-02")
+    report.check(s, "free charger assigned immediately", app.toast() == "EV-02 đang sạc tại CP-01.", app.toast())
+    report.check(s, "EV-02 no longer offered", app.page.locator("#charging-vehicle option").all_inner_texts() == ["EV-01 · 82%"])
+    app.submit_private("H-METRO", "51A-111.11", "")
+    report.check(s, "empty private battery refused", app.toast() == "Mức pin phải từ 0 đến 100." and not app.toast_ok(), app.toast())
+    app.submit_private("H-METRO", "51A-111.11", "35")
+    report.check(s, "private EV holds a space and charges", app.toast() == "Đã giữ chỗ tại Metro Hub; 51A-111.11 đang sạc tại CP-02.", app.toast())
+    app.submit_shared("H-METRO", "EV-01")
+    report.check(s, "no charger left: EV-01 waits #1", app.toast() == "EV-01 đang chờ sạc tại Metro Hub (#1).", app.toast())
+    app.submit_private("H-METRO", "51B-222.22", "10", soon=True)
+    report.check(s, "urgent private EV jumps to #1", app.toast() == "Đã giữ chỗ tại Metro Hub; 51B-222.22 đang chờ sạc (#1).", app.toast())
+    my_rows = app.text("#my-charging")
+    report.check(s, "my requests show charging/waiting states", "Đang sạc · CP-01" in my_rows and "Đang chờ · #2" in my_rows, my_rows.replace("\n", " / "))
+    app.shot(shots, "02_services_charging.png")
+    app.go("charging")
+    order = app.page.locator("#charging-queue tbody tr").evaluate_all("rows => rows.map(r => r.dataset.requestId)")
+    labels = [app.text(f'#charging-queue tr[data-request-id="{rid}"] strong') for rid in order]
+    report.check(s, "priority queue: needed-soon low battery first", labels == ["51B-222.22", "EV-01"], str(labels))
+    app.act("finish-charging", **{"point-id": "CP-01"})
+    report.check(s, "finishing CP-01 hands it to the top request", app.toast() == "EV-02 đã sạc xong; 51B-222.22 được chuyển vào CP-01.", app.toast())
+    app.shot(shots, "04_smart_charging.png")
+    app.go("network")
+    report.check(s, "EV-02 charged to 100% and available", "100%" in app.text('#fleet-table tr[data-vehicle-id="EV-02"]') and app.fleet_status("EV-02") == "Sẵn sàng")
+    app.go("services")
+    app.act("cancel-charging", **{"request-id": "CHG-004"})
+    report.check(s, "a waiting request can be cancelled", app.toast() == "Đã hủy yêu cầu sạc của EV-01.", app.toast())
 
-    s2 = "S5b charging guard"
-    app.open()
-    app.page.select_option("#charging-vehicle", "EV-01")
-    app.page.click("#submit-charging")
-    app.click_action("EV-01", "reserve-vehicle")
-    app.page.click('#schedule-controls button[data-hub-id="H-METRO"]')
-    report.check(s2, "reserved vehicle is put on hold instead of being assigned", app.feedback() == "No queued charging request can be assigned at Metro Hub now (0 waiting, 1 on hold)." and "On hold: vehicle is reserved" in app.text("#operator-schedule"), app.feedback())
-    report.check(s2, "both Metro points stay free", "2 free points" in app.text("#schedule-controls"), app.text("#schedule-controls"))
+
+def scenario_charging_guard(app: App, report: Report, shots: Path | None) -> None:
+    s = "S5b charging guard (D-009)"
+    app.open(page="services")
+    app.submit_shared("H-METRO", "EV-02")
+    app.submit_private("H-METRO", "51A-111.11", "35")
+    app.submit_shared("H-METRO", "EV-01")
+    app.go("find")
+    app.reserve("EV-01")
+    app.go("charging")
+    report.check(s, "waiting request of a reserved vehicle is on hold", "Tạm hoãn: xe đang được giữ" in app.text("#charging-queue"), app.text("#charging-queue"))
+    app.act("finish-charging", **{"point-id": "CP-01"})
+    report.check(s, "freed charger is not given to the reserved vehicle", app.toast() == "EV-02 đã sạc xong tại CP-01." and "Sẵn sàng" in app.text('#points-table tr[data-point-id="CP-01"]'), app.toast())
 
 
 def scenario_operator(app: App, report: Report, shots: Path | None) -> None:
-    s = "S6 operator incidents (AT-10,11,13,14)"
-    app.open()
-    metrics = app.text("#operator-metrics")
-    report.check(s, "network metrics: 4 Hubs, 5/6 vehicles, 4/5 points", all(token in metrics for token in ("Hubs monitored\n4", "5/6", "4/5")), metrics.replace("\n", " / "))
-    report.check(s, "redistribution recommendation Dormitory -> University", "from Dormitory Hub to University Hub" in app.text("#redistribution-panel"))
-    app.page.click('[data-action="coordinate-redistribution"]')
-    report.check(s, "coordination moves EV-03 to University", app.feedback() == "EV-03 coordinated from Dormitory Hub to University Hub." and app.cell("EV-03", 1) == "University Hub", app.feedback())
+    s = "S6 operator and incidents (AT-10,11,13,14)"
+    app.open(page="network")
+    metrics = {m: app.text(f'#operator-metrics [data-metric="{m}"] strong') for m in ("hubs", "vehicles", "points", "incidents", "queue")}
+    report.check(s, "network KPIs", metrics == {"hubs": "4", "vehicles": "5/6", "points": "4/5", "incidents": "0", "queue": "0"}, str(metrics))
+    report.check(s, "redistribution Dormitory → University", "Dormitory Hub" in app.text("#redistribution-panel") and "University Hub" in app.text("#redistribution-panel"))
+    app.shot(shots, "03_network.png")
+    app.act("coordinate-redistribution")
+    report.check(s, "coordination moves EV-03", app.toast() == "Đã điều phối EV-03 từ Dormitory Hub đến University Hub.", app.toast())
+    app.go("incidents")
     app.page.select_option("#incident-vehicle", "EV-02")
     app.page.click("#report-vehicle-failure")
-    report.check(s, "vehicle failure recorded", app.feedback() == "EV-02 marked failed and incident opened." and app.status("EV-02") == "Failed", app.feedback())
+    report.check(s, "vehicle failure recorded as INC-001", app.toast() == "Đã báo hỏng EV-02 (INC-001).", app.toast())
     app.page.select_option("#incident-charging-point", "CP-01")
     app.page.click("#report-charging-failure")
-    report.check(s, "charging point outage recorded", app.feedback() == "CP-01 marked unavailable and incident opened.", app.feedback())
-    incidents = app.text("#incident-list")
-    report.check(s, "incident list shows both incidents as Open", "Vehicle failure · EV-02" in incidents and "Charging point unavailable · CP-01" in incidents and incidents.count("Open") == 2, incidents.replace("\n", " / "))
-    report.check(s, "Open incidents metric = 2", "Open incidents\n2" in app.text("#operator-metrics"))
-    app.page.click("#report-vehicle-failure")
-    report.check(s, "repeating the same failure is rejected", app.feedback() == "EV-02 is already marked as failed." and not app.feedback_ok(), app.feedback())
-    app.shot(shots, "05_incidents.png", ".operator-tools")
+    report.check(s, "charger outage recorded as INC-002", app.toast() == "Đã báo CP-01 ngừng hoạt động (INC-002).", app.toast())
+    report.check(s, "both incidents open", app.text("#incident-summary") == "2 đang mở · 0 đã xử lý" and app.page.locator('#incident-list [data-status="open"]').count() == 2)
+    report.check(s, "reported resources leave the report lists", "EV-02" not in app.page.locator("#incident-vehicle").inner_text() and "CP-01" not in app.page.locator("#incident-charging-point").inner_text())
+    app.act("resolve-incident", **{"incident-id": "INC-001"})
+    report.check(s, "repair returns EV-02 to service", app.toast() == "EV-02 đã sửa xong, sẵn sàng tại Metro Hub.", app.toast())
+    app.act("resolve-incident", **{"incident-id": "INC-002"})
+    report.check(s, "restore returns CP-01 to service", app.toast() == "CP-01 đã hoạt động trở lại.", app.toast())
+    report.check(s, "incident log shows both resolved", app.text("#incident-summary") == "0 đang mở · 2 đã xử lý" and app.page.locator('#incident-list [data-status="resolved"]').count() == 2)
+    app.shot(shots, "05_incidents.png")
+    app.go("network")
+    report.check(s, "fleet and KPIs back to normal", app.fleet_status("EV-02") == "Sẵn sàng" and app.text('#operator-metrics [data-metric="incidents"] strong') == "0")
 
 
 def scenario_what_if(app: App, report: Report, shots: Path | None) -> None:
     s = "S7 what-if x5 (AT-16..18)"
-    app.open()
-    live_table = app.text("#operator-hub-rows")
-    live_cards = app.text("#hub-grid")
+    app.open(page="network")
+    live_table = app.text("#network-table")
+    app.go("whatif")
     for scenario in SCENARIOS:
         app.page.select_option("#scenario", scenario)
         app.page.select_option("#scenario-hub", "H-METRO")
         app.page.click("#run-simulation")
         output = app.text("#simulation-output")
-        unchanged = app.text("#operator-hub-rows") == live_table and app.text("#hub-grid") == live_cards
-        report.check(
-            s,
-            f"{scenario}: impact + recommendation shown, live state unchanged",
-            "Live state unchanged: yes" in output and app.page.locator("#simulation-output li").count() >= 1 and unchanged
-            and app.feedback() == "Hypothetical scenario evaluated. Live network state was not changed.",
-            output.replace("\n", " / ")[:300],
-        )
+        report.check(s, f"{scenario}: impact + recommendation, live data unchanged",
+                     "Dữ liệu thật không đổi" in output and app.page.locator("#simulation-output .recommendations li").count() >= 1
+                     and app.toast() == "Đã chạy mô phỏng. Dữ liệu thật không đổi.", output.replace("\n", " / ")[:240])
         if scenario == "hub_full":
-            app.shot(shots, "06_what_if.png", ".simulation-panel")
+            app.shot(shots, "06_whatif.png")
+    app.go("network")
+    report.check(s, "network table identical after five simulations", app.text("#network-table") == live_table)
 
 
-def scenario_simulator_and_modes(app: App, report: Report, shots: Path | None) -> None:
+def scenario_simulator_reset_modes(app: App, report: Report, shots: Path | None) -> None:
     s = "S8 simulator (AT-19)"
     app.open()
-    expected = [
-        "Telemetry update: EV-01 battery is now 81%.",
-        "Parking sensor update: Metro Hub occupancy is now 5/8.",
-        "Charging telemetry update: CP-01 is temporarily occupied.",
-        "Operational event update: the simulator reported a routine network refresh.",
-    ]
+    expected = ["Telemetry: pin EV-01 còn 81%.", "Cảm biến chỗ đỗ: Metro Hub 5/8.", "Telemetry trụ: CP-01 đang bận.", "Làm mới mạng lưới định kỳ."]
     for index, message in enumerate(expected, start=1):
         app.page.click("#simulate-update")
         report.check(s, f"manual update {index} visible immediately", app.text("#last-update").startswith(message), app.text("#last-update"))
-    report.check(s, "vehicle table reflects telemetry (EV-01 81%)", app.cell("EV-01", 2) == "81%")
     app.page.click("#toggle-auto-update")
-    report.check(s, "auto updates start", app.text("#toggle-auto-update") == "Stop auto updates" and "15 seconds" in app.feedback(), app.feedback())
+    report.check(s, "auto updates on", app.text("#toggle-auto-update") == "Tự động: bật" and app.toast() == "Đã bật cập nhật tự động: mỗi 15 giây.", app.toast())
     before = app.text("#last-update")
     try:
         app.page.wait_for_function(f"() => document.querySelector('#last-update').innerText.trim() !== {before!r}", timeout=20_000)
@@ -328,121 +359,123 @@ def scenario_simulator_and_modes(app: App, report: Report, shots: Path | None) -
         arrived = False
     report.check(s, "an automatic update arrives within 20 s", arrived, app.text("#last-update"))
     app.page.click("#toggle-auto-update")
-    report.check(s, "auto updates stop", app.text("#toggle-auto-update") == "Start auto updates" and app.feedback() == "Automatic simulated updates paused.", app.feedback())
+    report.check(s, "auto updates off", app.text("#toggle-auto-update") == "Tự động: tắt" and app.toast() == "Đã tắt cập nhật tự động.", app.toast())
 
-    m = "S9 interface mode (AT-20)"
-    app.open()
+    r = "S9 reset data (D-018)"
+    app.reserve("EV-01")
+    app.page.click("#reset-data")
+    report.check(r, "reset restores the seed data", app.toast() == "Đã đặt lại dữ liệu mô phỏng." and app.trip_state() is None and "4/8" in app.tile("H-METRO") and app.text("#last-update").startswith("Đã nạp dữ liệu ban đầu."), app.toast())
+
+    m = "S10 interface mode (AT-20)"
     app.page.click("#toggle-mode")
     background = app.page.evaluate("getComputedStyle(document.body).backgroundColor")
-    report.check(m, "dark mode applied", app.page.get_attribute("html", "data-mode") == "dark" and background == "rgb(21, 26, 29)", background)
-    app.page.select_option("#language-select", "vi")
-    report.check(m, "Vietnamese interface applied", app.page.get_attribute("html", "lang") == "vi" and app.text("main section:nth-of-type(2) h2") == "Tìm tài nguyên và hoàn thành chuyến đi", app.text("main section:nth-of-type(2) h2"))
-    report.check(m, "mode button translated", app.text("#toggle-mode") == "Chế độ sáng", app.text("#toggle-mode"))
-    app.click_action("EV-01", "reserve-vehicle")
-    report.check(m, "service feedback translated", app.feedback().startswith("Đã giữ EV-01 cho STUDENT-DEMO đến"), app.feedback())
-    report.check(m, "status badge translated", app.status("EV-01") == "Đã giữ chỗ", app.status("EV-01"))
-    app.page.evaluate("window.scrollTo(0, 0)")
-    app.shot(shots, "07_vi_dark.png")
+    report.check(m, "dark mode applied", app.page.get_attribute("html", "data-mode") == "dark" and background == "rgb(15, 22, 29)", background)
     app.page.select_option("#language-select", "en")
-    report.check(m, "back to English keeps state and re-translates feedback", app.page.get_attribute("html", "lang") == "en" and app.feedback().startswith("EV-01 reserved for STUDENT-DEMO") and app.status("EV-01") == "Reserved", app.feedback())
+    report.check(m, "English interface applied", app.page.get_attribute("html", "lang") == "en" and app.text("#page-title") == "Find & reserve" and app.text(".nav-link[data-page='incidents']") == "Incidents")
+    app.reserve("EV-01")
+    report.check(m, "service feedback in English", app.toast().startswith("EV-01 reserved until"), app.toast())
+    app.page.select_option("#language-select", "vi")
+    report.check(m, "back to Vietnamese re-translates feedback and keeps state", app.toast().startswith("Đã giữ EV-01 đến") and app.trip_state() == "active", app.toast())
+    app.page.select_option("#language-select", "en")
+    app.shot(shots, "07_en_dark.png")
+    app.page.select_option("#language-select", "vi")
     app.page.click("#toggle-mode")
     report.check(m, "light mode restored", app.page.get_attribute("html", "data-mode") == "light")
 
 
 def scenario_demo_rehearsal(app: App, report: Report, shots: Path | None) -> None:
-    """Follows docs/demo/DEMO_SCRIPT_8_TO_12_MIN.md on ONE page load, as presented live."""
+    """Replays docs/demo/DEMO_SCRIPT_8_TO_12_MIN.md on ONE page load, as presented live."""
     s = "S11 demo script rehearsal"
-    app.open()
-    expect = lambda step, text: report.check(s, step, app.feedback() == text, app.feedback())  # noqa: E731
+    expect = lambda step, text: report.check(s, step, app.toast() == text, app.toast())  # noqa: E731
     page = app.page
+    app.open()
 
     page.select_option("#vehicle-search-hub", "H-METRO")
     page.fill("#minimum-battery", "80")
-    report.check(s, "step 1: search Metro >= 80% finds EV-01 only", page.locator("#search-results .result-row").count() == 1)
+    report.check(s, "1: Metro >= 80% finds EV-01", page.locator("#search-results tbody tr").count() == 1)
     page.select_option("#vehicle-search-hub", "")
     page.fill("#minimum-battery", "0")
 
-    app.click_action("EV-01", "reserve-vehicle")
-    report.check(s, "step 2: reserve EV-01", app.feedback().startswith("EV-01 reserved for STUDENT-DEMO until"), app.feedback())
-    app.click_action("EV-01", "pickup-vehicle")
-    expect("step 2: pick up EV-01", "EV-01 picked up from Metro Hub. Return it to a Hub with free parking.")
-    app.return_to("EV-01", "H-DORM")
-    expect("step 2: return EV-01 to Dormitory", "EV-01 returned to Dormitory Hub; the reservation is completed.")
+    app.reserve("EV-01")
+    report.check(s, "2: reserve EV-01", app.toast().startswith("Đã giữ EV-01 đến"), app.toast())
+    app.act("pickup-vehicle", **{"vehicle-id": "EV-01"})
+    expect("2: pick up EV-01", "Đã nhận EV-01 tại Metro Hub.")
+    app.return_to("H-DORM")
+    expect("2: return EV-01 to Dormitory", "Đã trả EV-01 tại Dormitory Hub.")
 
-    app.reserve_and_pick_up("EV-05")
-    expect("step 4: reserve + pick up EV-05", "EV-05 picked up from University Hub. Return it to a Hub with free parking.")
+    app.reserve("EV-05")
+    app.act("pickup-vehicle", **{"vehicle-id": "EV-05"})
+    expect("4: pick up EV-05", "Đã nhận EV-05 tại University Hub.")
+    app.go("services")
     page.select_option("#parking-hub", "H-DORM")
     page.click("#reserve-parking")
-    expect("step 4: parking 1 at Dormitory", "Parking space reserved at Dormitory Hub; 1 space left.")
+    expect("4: hold 1 at Dormitory", "Đã giữ chỗ tại Dormitory Hub; còn 1 chỗ.")
     page.click("#reserve-parking")
-    expect("step 4: parking 2 at Dormitory", "Parking space reserved at Dormitory Hub; 0 spaces left.")
+    expect("4: hold 2 at Dormitory", "Đã giữ chỗ tại Dormitory Hub; còn 0 chỗ.")
     page.click("#reserve-parking")
-    expect("step 4: parking 3 refused", "No parking capacity available at Dormitory Hub.")
-    app.return_to("EV-05", "H-DORM")
-    expect("step 4: return to full Dormitory refused", "Dormitory Hub has no free parking space; choose another Hub.")
-    report.check(s, "step 4: Dormitory #1 at capacity", "#1 · at capacity" in page.locator('#operator-hub-rows tr[data-hub-id="H-DORM"]').inner_text())
-    app.return_to("EV-05", "H-CAMPUS")
-    expect("step 4: return EV-05 to University", "EV-05 returned to University Hub; the reservation is completed.")
+    expect("4: hold 3 refused", "Dormitory Hub đã hết chỗ đỗ.")
+    app.go("find")
+    app.return_to("H-DORM")
+    expect("4: return to full Dormitory refused", "Dormitory Hub đã hết chỗ; hãy chọn Hub khác.")
+    app.go("network")
+    report.check(s, "4: Dormitory #1 full", "Hết chỗ" in app.text('#network-table tr[data-hub-id="H-DORM"]'))
+    app.go("find")
+    app.return_to("H-CAMPUS")
+    expect("4: return EV-05 to University", "Đã trả EV-05 tại University Hub.")
 
-    page.select_option("#charging-hub", "H-METRO")
-    page.select_option("#charging-vehicle", "EV-02")
-    page.click("#submit-charging")
-    expect("step 5: queue EV-02", "Charging request for EV-02 added to the queue at Metro Hub.")
-    page.click("#submit-charging")
-    expect("step 5: duplicate EV-02 refused", "EV-02 already has a charging request in the queue.")
-    page.select_option("#charging-type", "private")
-    page.fill("#private-vehicle-label", "Private EV A")
-    page.fill("#charging-battery", "")
-    page.click("#schedule-private")
-    expect("step 5: empty battery refused", "Enter a battery level from 0 to 100.")
-    page.fill("#charging-battery", "35")
-    page.click("#schedule-private")
-    expect("step 5: Private EV A queued", "Parking held at Metro Hub and charging request for Private EV A queued. Apply the schedule to assign a charging point.")
-    page.fill("#private-vehicle-label", "Private EV B")
-    page.fill("#charging-battery", "70")
-    page.click("#schedule-private")
-    expect("step 5: Private EV B queued", "Parking held at Metro Hub and charging request for Private EV B queued. Apply the schedule to assign a charging point.")
-    page.select_option("#charging-type", "shared")
-    page.click('#schedule-controls button[data-hub-id="H-METRO"]')
-    expect("step 5: apply Metro schedule", "Charging schedule applied at Metro Hub: 2 newly assigned, 1 waiting, 0 on hold.")
+    app.go("services")
+    app.submit_shared("H-METRO", "EV-02")
+    expect("5: EV-02 charges at once", "EV-02 đang sạc tại CP-01.")
+    app.submit_private("H-METRO", "51A-111.11", "35")
+    expect("5: private EV charges", "Đã giữ chỗ tại Metro Hub; 51A-111.11 đang sạc tại CP-02.")
+    app.submit_private("H-METRO", "51B-222.22", "60")
+    expect("5: second private EV waits", "Đã giữ chỗ tại Metro Hub; 51B-222.22 đang chờ sạc (#1).")
+    app.submit_private("H-METRO", "51C-333.33", "10", soon=True)
+    expect("5: urgent EV jumps ahead", "Đã giữ chỗ tại Metro Hub; 51C-333.33 đang chờ sạc (#1).")
+    app.go("charging")
+    app.act("finish-charging", **{"point-id": "CP-01"})
+    expect("5: finished point goes to the urgent EV", "EV-02 đã sạc xong; 51C-333.33 được chuyển vào CP-01.")
 
-    page.click('[data-action="coordinate-redistribution"]')
-    expect("step 6: coordinate redistribution", "EV-01 coordinated from Dormitory Hub to University Hub.")
-    page.select_option("#incident-vehicle", "EV-02")
-    page.click("#report-vehicle-failure")
-    expect("step 6: EV-02 failed", "EV-02 marked failed and incident opened.")
-    report.check(s, "step 6: EV-02 request on hold, Private EV B planned on CP-01", "On hold: vehicle failed" in app.text("#operator-schedule") and "Plan CP-01" in app.text("#operator-schedule"))
-    page.click('#schedule-controls button[data-hub-id="H-METRO"]')
-    expect("step 6: re-apply schedule", "Charging schedule applied at Metro Hub: 1 newly assigned, 0 waiting, 1 on hold.")
+    app.go("network")
+    app.act("coordinate-redistribution")
+    expect("6: coordinate redistribution", "Đã điều phối EV-01 từ Dormitory Hub đến University Hub.")
+    app.go("incidents")
     page.select_option("#incident-charging-point", "CP-02")
     page.click("#report-charging-failure")
-    expect("step 6: CP-02 unavailable", "CP-02 marked unavailable and incident opened.")
-    page.click('#schedule-controls button[data-hub-id="H-METRO"]')
-    expect("step 6: no capacity left", "No queued charging request can be assigned at Metro Hub now (1 waiting, 1 on hold).")
+    expect("6: CP-02 outage", "Đã báo CP-02 ngừng hoạt động (INC-001).")
+    page.select_option("#incident-vehicle", "EV-03")
+    page.click("#report-vehicle-failure")
+    expect("6: EV-03 failure", "Đã báo hỏng EV-03 (INC-002).")
+    app.act("resolve-incident", **{"incident-id": "INC-001"})
+    expect("6: restore CP-02, next EV starts", "CP-02 hoạt động trở lại; 51A-111.11 được chuyển vào sạc.")
+    app.act("resolve-incident", **{"incident-id": "INC-002"})
+    expect("6: EV-03 repaired", "EV-03 đã sửa xong, sẵn sàng tại Dormitory Hub.")
 
-    cards_before = app.text("#hub-grid")
+    app.go("whatif")
     for scenario in ("hub_full", "charging_demand_surge"):
         page.select_option("#scenario", scenario)
         page.select_option("#scenario-hub", "H-METRO")
         page.click("#run-simulation")
-        report.check(s, f"step 7: what-if {scenario} keeps live state", "Live state unchanged: yes" in app.text("#simulation-output") and app.text("#hub-grid") == cards_before)
+        report.check(s, f"7: what-if {scenario}", "Dữ liệu thật không đổi" in app.text("#simulation-output"))
 
     page.click("#simulate-update")
-    report.check(s, "step 8: first simulated update", app.text("#last-update").startswith("Telemetry update: EV-01 battery is now 81%."), app.text("#last-update"))
+    report.check(s, "8: simulated update", app.text("#last-update").startswith("Telemetry: pin EV-01 còn 81%."), app.text("#last-update"))
     page.click("#toggle-mode")
-    page.select_option("#language-select", "vi")
-    report.check(s, "step 8: dark + Vietnamese", app.page.get_attribute("html", "data-mode") == "dark" and app.feedback().startswith("Cập nhật telemetry: pin EV-01 còn 81%"), app.feedback())
+    page.select_option("#language-select", "en")
+    report.check(s, "8: dark + English", page.get_attribute("html", "data-mode") == "dark" and app.text("#page-title") == "What-if simulation")
 
 
 def scenario_mobile(browser, base: str, report: Report, shots: Path | None, problems: list[str]) -> None:
-    s = "S10 narrow viewport"
+    s = "S12 narrow viewport"
     context = browser.new_context(viewport={"width": 390, "height": 844})
     page = context.new_page()
     watch(page, problems)
     app = App(page, base)
+    for name in ("find", "services", "network", "incidents"):
+        app.open(page=name)
+        overflow = page.evaluate("document.documentElement.scrollWidth - window.innerWidth")
+        report.check(s, f"no horizontal page overflow at 390 px ({name})", overflow <= 0, f"overflow {overflow}px")
     app.open()
-    overflow = page.evaluate("document.documentElement.scrollWidth - window.innerWidth")
-    report.check(s, "no horizontal page overflow at 390 px", overflow <= 0, f"overflow {overflow}px")
     app.shot(shots, "08_mobile.png")
     context.close()
 
@@ -458,8 +491,7 @@ def launch(playwright, preferred: str, headed: bool):
     order = [preferred] + [name for name in ("chrome", "msedge", "chromium") if name != preferred]
     for name in order:
         try:
-            browser = playwright.chromium.launch(channel=None if name == "chromium" else name, headless=not headed)
-            return name, browser
+            return name, playwright.chromium.launch(channel=None if name == "chromium" else name, headless=not headed)
         except Exception:  # noqa: BLE001 - try the next installed browser
             continue
     raise SystemExit("No Chromium-based browser found. Install Chrome/Edge or run: python -m playwright install chromium")
@@ -490,12 +522,13 @@ def main() -> int:
         http_smoke(report, base)
         name, browser = launch(playwright, args.browser, args.headed)
         print(f"Browser: {name} {browser.version}", flush=True)
-        context = browser.new_context(viewport={"width": 1366, "height": 900}, locale="en-US")
+        context = browser.new_context(viewport={"width": 1366, "height": 860})
         page = context.new_page()
         watch(page, problems)
         app = App(page, base)
-        for scenario in (scenario_discover, scenario_lifecycle, scenario_expiry, scenario_capacity, scenario_charging,
-                         scenario_operator, scenario_what_if, scenario_simulator_and_modes, scenario_demo_rehearsal):
+        for scenario in (scenario_discover, scenario_trip, scenario_expiry_and_cancel, scenario_capacity, scenario_charging,
+                         scenario_charging_guard, scenario_operator, scenario_what_if, scenario_simulator_reset_modes,
+                         scenario_demo_rehearsal):
             try:
                 scenario(app, report, shots)
             except Exception as error:  # noqa: BLE001 - a crash in one scenario is a failed check, not a stopped run
