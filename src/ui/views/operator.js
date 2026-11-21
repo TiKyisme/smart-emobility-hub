@@ -1,153 +1,185 @@
-// Operator portal: FR-10..FR-18 (UC-11..UC-18).
-import { ChargingPointStatus, ChargingRequestStatus, IncidentStatus, VehicleStatus } from "../../domain/status.js";
-import { buildChargingSchedule } from "../../services/chargingService.js";
-import { getCapacityRisks, getNetworkMetrics, suggestRedistribution } from "../../services/operatorService.js";
-import { ScenarioType } from "../../services/simulationService.js";
-import { badge, batteryCell, emptyState, escapeHtml, meter, setHtml, setOptions, statusBadge } from "../dom.js";
-import { describe, formatTime, statusLabel, t } from "../i18n.js";
+// Operator portal — Monitor Network Status (UC-11..UC-13), Manage Smart Charging (UC-16) and
+// Redistribute Vehicles (UC-14) on the OperatorDashboardUI.
+import { DISPATCH_STAFF_ID } from "../../domain/actors.js";
+import { ChargingPointStatus, ChargingRequestStatus, DispatchOrderStatus } from "../../domain/status.js";
+import { buildChargingSchedule, getChargingPorts, listChargeableVehicles } from "../../services/chargingService.js";
+import { getThresholds, listHubSummaries } from "../../services/hubService.js";
+import {
+  detectCapacityRisks,
+  getNetworkMetrics,
+  identifyBottlenecks,
+  listMovableVehicles,
+  planRedistribution,
+} from "../../services/operatorService.js";
+import {
+  $,
+  actionButton,
+  badge,
+  batteryCell,
+  emptyState,
+  escapeHtml,
+  meter,
+  setHtml,
+  setInputValue,
+  setOptions,
+  statusBadge,
+  table,
+} from "../dom.js";
+import { describe, formatClock, formatDate, formatDateTime, statusLabel, t } from "../i18n.js";
 
 const hubName = (state, hubId) => state.hubs.find((hub) => hub.id === hubId)?.name ?? hubId;
 
-function table(lang, headers, rows) {
-  return `<table class="table"><thead><tr>${headers.map((key) => `<th>${key ? escapeHtml(t(lang, key)) : ""}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`;
-}
+/* ---------- Monitor Network Status ---------- */
 
-export function renderNetworkPage(state, lang) {
+// OperatorDashboardUI.renderDashboard: KPIs, alerts at the configured thresholds, Hubs, fleet.
+export function renderDashboard(state, lang) {
   const metrics = getNetworkMetrics(state);
   setHtml("#operator-metrics", [
     ["hubs", "kpi.hubs", metrics.hubs],
     ["vehicles", "kpi.vehicles", `${metrics.availableVehicles}/${metrics.vehicles}`],
     ["points", "kpi.points", `${metrics.availableChargingPoints}/${metrics.chargingPoints}`],
     ["incidents", "kpi.incidents", metrics.openIncidents],
-    ["queue", "kpi.queue", metrics.queuedChargingRequests],
+    ["queue", "kpi.queue", metrics.waitingCharging],
+    ["dispatch", "kpi.dispatch", metrics.activeDispatch],
   ].map(([id, key, value]) => `<div class="kpi" data-metric="${id}"><span>${escapeHtml(t(lang, key))}</span><strong>${escapeHtml(value)}</strong></div>`).join(""));
 
-  setHtml("#network-table", table(lang, ["col.hub", "col.parking", "col.vehiclesAvailable", "col.freeChargers", "col.risk"],
-    getCapacityRisks(state).map((hub, index) => {
-      const percent = Math.round(hub.utilization * 100);
-      const risk = hub.atCapacity
-        ? badge(t(lang, "risk.full", { rank: index + 1 }), "danger")
-        : `<span class="muted">#${index + 1}</span>`;
-      return `<tr data-hub-id="${escapeHtml(hub.id)}">
-        <td><strong>${escapeHtml(hub.name)}</strong> <span class="code">${escapeHtml(hub.id)}</span></td>
-        <td><span class="usage">${meter(hub.utilization, hub.atCapacity ? "danger" : "accent")}<span class="num">${hub.usedParking}/${hub.parkingCapacity}</span><span class="muted">${escapeHtml(t(lang, "network.held", { held: hub.reservedParking }))}</span></span></td>
-        <td class="num">${hub.availableVehicles}</td>
-        <td class="num">${hub.availableChargingPoints}</td>
-        <td><span class="risk"><span class="num">${percent}%</span>${risk}</span></td>
-      </tr>`;
-    }).join("")));
+  const thresholds = getThresholds(state);
+  setInputValue("#threshold-overload", thresholds.overloadPercent);
+  setInputValue("#threshold-shortage", thresholds.shortageVehicles);
+  const alerts = identifyBottlenecks(state);
+  setHtml("#alert-list", alerts.length === 0
+    ? emptyState(t(lang, "alerts.none"))
+    : `<ul class="list">${alerts.map((alert) => `<li data-alert="${escapeHtml(alert.type)}" data-hub-id="${escapeHtml(alert.hubId)}">
+        <span>${badge(t(lang, `alert.${alert.type}Tag`), alert.type === "overload" ? "danger" : "warning")} ${escapeHtml(t(lang, `alert.${alert.type}`, alert))}</span></li>`).join("")}</ul>`);
 
-  const suggestion = suggestRedistribution(state);
-  setHtml("#redistribution-panel", suggestion
-    ? `<p class="route"><strong>${escapeHtml(suggestion.params.fromHub)}</strong><span aria-hidden="true">→</span><strong>${escapeHtml(suggestion.params.toHub)}</strong></p>
-       <p class="muted">${escapeHtml(t(lang, "redistribution.detail", { count: suggestion.vehicleCount }))}</p>
-       <button type="button" class="btn" data-action="coordinate-redistribution">${escapeHtml(t(lang, "action.coordinate"))}</button>`
-    : emptyState(t(lang, "redistribution.none")));
+  setHtml("#network-table", table(
+    [t(lang, "col.hub"), t(lang, "col.parking"), t(lang, "col.vehiclesAvailable"), t(lang, "col.freeChargers"), t(lang, "col.risk"), t(lang, "col.alerts")],
+    detectCapacityRisks(state).map((hub) => `<tr data-hub-id="${escapeHtml(hub.id)}">
+      <td><strong>${escapeHtml(hub.name)}</strong> <span class="code">${escapeHtml(hub.id)}</span></td>
+      <td><span class="usage">${meter(hub.utilization, hub.overloaded ? "danger" : "accent")}<span class="num">${hub.usedParking}/${hub.parkingCapacity}</span><span class="muted">${escapeHtml(t(lang, "network.held", { held: hub.reservedParking }))}</span></span></td>
+      <td class="num">${hub.availableVehicles}</td>
+      <td class="num">${hub.availableChargingPoints}/${hub.totalChargingPoints}</td>
+      <td class="num">${hub.utilizationPercent}%</td>
+      <td>${[hub.overloaded ? badge(t(lang, "alert.overloadTag"), "danger") : "", hub.shortage ? badge(t(lang, "alert.shortageTag"), "warning") : ""].join(" ")}</td>
+    </tr>`).join(""),
+  ));
 
-  setHtml("#fleet-table", table(lang, ["col.vehicle", "col.hub", "col.battery", "col.status"],
+  setHtml("#fleet-table", table([t(lang, "col.vehicle"), t(lang, "col.type"), t(lang, "col.hub"), t(lang, "col.battery"), t(lang, "col.status")],
     state.vehicles.map((vehicle) => `<tr data-vehicle-id="${escapeHtml(vehicle.id)}">
       <td><strong>${escapeHtml(vehicle.id)}</strong></td>
+      <td>${escapeHtml(t(lang, `vtype.${vehicle.type}`))}</td>
       <td>${escapeHtml(hubName(state, vehicle.hubId))}</td>
       <td>${batteryCell(vehicle.battery)}</td>
       <td>${statusBadge(vehicle.status, statusLabel(lang, vehicle.status))}</td>
     </tr>`).join("")));
 }
 
+/* ---------- Manage Smart Charging ---------- */
+
+const slotText = (lang, request) => `${formatClock(lang, request.slotStart)}–${formatClock(lang, request.slotEnd)} ${formatDate(lang, request.slotStart)}`;
+
+function scheduleRow(lang, request, stateBadge, { current = false, actions = true } = {}) {
+  const buttons = actions
+    ? `${actionButton("reschedule-charging", t(lang, "action.reschedule"), { "request-id": request.id }, "btn-sm btn-secondary")}
+       ${actionButton("operator-cancel-charging", t(lang, "action.cancel"), { "request-id": request.id }, "btn-sm btn-secondary")}`
+    : "";
+  return `<tr data-request-id="${escapeHtml(request.id)}"${request.overbooked ? ' class="changed"' : ""}>
+    <td class="num">${escapeHtml(slotText(lang, request))}${current ? `<span class="tag">${escapeHtml(t(lang, "tag.current"))}</span>` : ""}</td>
+    <td><strong>${escapeHtml(request.vehicleLabel)}</strong>${request.priority ? `<span class="tag">${escapeHtml(t(lang, "tag.priority"))}</span>` : ""}</td>
+    <td>${escapeHtml(t(lang, `source.${request.source}`))}</td>
+    <td class="num">${escapeHtml(request.battery)}%</td>
+    <td class="num">${escapeHtml(request.priorityScore)}</td>
+    <td>${stateBadge}</td>
+    <td class="actions">${buttons}</td>
+  </tr>`;
+}
+
 export function renderChargingPage(state, lang) {
-  setHtml("#points-table", table(lang, ["col.point", "col.hub", "col.status", "col.session", ""],
-    state.chargingPoints.map((point) => {
-      const session = state.chargingRequests.find(
-        (item) => item.status === ChargingRequestStatus.SCHEDULED && item.chargingPointId === point.id,
-      );
-      let sessionText = "—";
-      if (session) sessionText = `<strong>${escapeHtml(session.vehicleLabel)}</strong> <span class="muted">${escapeHtml(session.battery)}%</span>`;
-      else if (point.simulatedOccupancy) sessionText = `<span class="muted">${escapeHtml(t(lang, "points.simulated"))}</span>`;
-      const action = session
-        ? `<button type="button" class="btn btn-sm" data-action="finish-charging" data-point-id="${escapeHtml(point.id)}">${escapeHtml(t(lang, "action.finish"))}</button>`
-        : "";
-      return `<tr data-point-id="${escapeHtml(point.id)}">
-        <td><strong>${escapeHtml(point.id)}</strong></td>
-        <td>${escapeHtml(hubName(state, point.hubId))}</td>
-        <td>${statusBadge(point.status, statusLabel(lang, point.status === ChargingPointStatus.OCCUPIED && session ? "charging" : point.status))}</td>
-        <td>${sessionText}</td>
-        <td class="actions">${action}</td>
-      </tr>`;
-    }).join("")));
-
-  const rows = state.hubs.flatMap((hub) => {
-    const schedule = buildChargingSchedule(state, hub.id);
-    return [
-      ...schedule.waiting.map((request, index) => ({ request, hub, state: badge(t(lang, "queue.waiting", { position: index + 1 }), "neutral") })),
-      ...schedule.blocked.map((request) => ({ request, hub, state: badge(t(lang, "request.onHold", { reason: t(lang, `blocked.${request.blockedReason}`) }), "warning") })),
-    ];
+  setOptions("#charging-hub", state.hubs.map((hub) => ({
+    value: hub.id,
+    label: t(lang, "ev.hubOption", { hubName: hub.name, ports: getChargingPorts(state, hub.id).length }),
+  })));
+  const hubId = $("#charging-hub").value;
+  const schedule = buildChargingSchedule(state, hubId);
+  const ports = getChargingPorts(state, hubId);
+  const booked = schedule.upcoming.reduce((total, slot) => total + slot.bookings.length, 0);
+  $("#charging-summary").textContent = t(lang, "charging.summary", {
+    charging: schedule.charging.length,
+    waiting: schedule.waiting.length + schedule.blocked.length,
+    scheduled: booked,
+    down: ports.filter((point) => point.status === ChargingPointStatus.UNAVAILABLE).length,
   });
-  setHtml("#charging-queue", rows.length === 0
-    ? emptyState(t(lang, "queue.empty"))
-    : table(lang, ["col.request", "col.hub", "col.battery", "col.priority", "col.state"], rows.map(({ request, hub, state: badgeHtml }) => `<tr data-request-id="${escapeHtml(request.id)}">
-        <td><strong>${escapeHtml(request.vehicleLabel)}</strong>${request.upcomingUsage ? `<span class="tag">${escapeHtml(t(lang, "vehicle.upcoming"))}</span>` : ""}</td>
-        <td>${escapeHtml(hub.name)}</td>
-        <td class="num">${escapeHtml(request.battery)}%</td>
-        <td class="num">${escapeHtml(request.priorityScore)}</td>
-        <td>${badgeHtml}</td>
+
+  setHtml("#points-table", table([t(lang, "col.point"), t(lang, "col.status"), t(lang, "col.session"), ""], ports.map((point) => {
+    const session = schedule.charging.find((item) => item.chargingPointId === point.id);
+    let sessionText = "—";
+    if (session) {
+      sessionText = `<strong>${escapeHtml(session.vehicleLabel)}</strong> <span class="muted">${escapeHtml(session.battery)}% · ${escapeHtml(t(lang, "trip.until", { time: formatClock(lang, session.slotEnd) }))}</span>`;
+    }
+    else if (point.simulatedOccupancy) sessionText = `<span class="muted">${escapeHtml(t(lang, "points.simulated"))}</span>`;
+    return `<tr data-point-id="${escapeHtml(point.id)}">
+      <td><strong>${escapeHtml(point.id)}</strong></td>
+      <td>${statusBadge(point.status, statusLabel(lang, point.status === ChargingPointStatus.OCCUPIED && session ? "charging" : point.status))}</td>
+      <td>${sessionText}</td>
+      <td class="actions">${session ? actionButton("finish-charging", t(lang, "action.finish"), { "point-id": point.id }, "btn-sm") : ""}</td>
+    </tr>`;
+  }).join("")));
+
+  const vehicles = listChargeableVehicles(state, hubId);
+  setOptions("#charging-vehicle", vehicles.map((vehicle) => ({ value: vehicle.id, label: `${vehicle.id} · ${vehicle.battery}%` })),
+    vehicles.length === 0 ? t(lang, "charging.noVehicle") : null);
+  $("#submit-charging").disabled = vehicles.length === 0;
+  $("#charging-hint").textContent = t(lang, vehicles.length === 0 ? "charging.hintNone" : "charging.hint");
+
+  const { QUEUED } = ChargingRequestStatus;
+  const rows = [
+    ...schedule.charging.map((request) => scheduleRow(lang, request, statusBadge("charging", t(lang, "request.charging", { pointId: request.chargingPointId })), { current: true, actions: false })),
+    ...schedule.waiting.map((request, index) => scheduleRow(lang, request, statusBadge(QUEUED, t(lang, "request.waiting", { position: index + 1 })), { current: true })),
+    ...schedule.blocked.map((request) => scheduleRow(lang, request, statusBadge("reserved", t(lang, "request.onHold", { reason: t(lang, `blocked.${request.blockedReason}`) })), { current: true })),
+    ...schedule.upcoming.flatMap((slot) => slot.bookings.map((request) => scheduleRow(lang, request,
+      `${statusBadge("scheduled", statusLabel(lang, "scheduled"))}${request.overbooked ? ` ${badge(t(lang, "tag.overbooked"), "danger")}` : ""}`))),
+  ];
+  setHtml("#charging-schedule", rows.length === 0
+    ? emptyState(t(lang, "schedule.empty"))
+    : table([t(lang, "col.slot"), t(lang, "col.label"), t(lang, "col.source"), t(lang, "col.battery"), t(lang, "col.priority"), t(lang, "col.state"), ""], rows.join("")));
+}
+
+/* ---------- Redistribute Vehicles ---------- */
+
+export function renderRedistributionPage(state, lang) {
+  const plan = planRedistribution(state);
+  setHtml("#redistribution-plan", plan
+    ? `<p class="route" data-plan-from="${escapeHtml(plan.fromHubId)}" data-plan-to="${escapeHtml(plan.toHubId)}"><strong>${escapeHtml(plan.params.fromHub)}</strong><span aria-hidden="true">→</span><strong>${escapeHtml(plan.params.toHub)}</strong></p>
+       <p class="muted">${escapeHtml(describe(lang, plan))}</p>
+       <div class="button-row">${actionButton("apply-plan", t(lang, "action.applyPlan"))}</div>`
+    : emptyState(t(lang, "redistribution.none")));
+
+  const summaries = listHubSummaries(state);
+  setOptions("#dispatch-from", summaries.map((hub) => ({ value: hub.id, label: `${hub.name} · ${listMovableVehicles(state, hub.id).length}` })));
+  const fromHubId = $("#dispatch-from").value;
+  const movable = listMovableVehicles(state, fromHubId);
+  setOptions("#dispatch-vehicle", movable.map((vehicle) => ({ value: vehicle.id, label: `${vehicle.id} · ${vehicle.battery}%` })),
+    movable.length === 0 ? t(lang, "dispatch.noVehicle") : null);
+  setOptions("#dispatch-to", summaries.filter((hub) => hub.id !== fromHubId).map((hub) => ({
+    value: hub.id,
+    label: hub.parkingAvailable > 0 ? t(lang, "parking.hubOption", { hubName: hub.name, free: hub.parkingAvailable }) : t(lang, "trip.hubFull", { hubName: hub.name }),
+  })));
+  $("#create-dispatch").textContent = t(lang, "action.createDispatch", { staffId: DISPATCH_STAFF_ID });
+  $("#create-dispatch").disabled = movable.length === 0;
+
+  const orders = [...state.dispatchOrders].reverse();
+  const active = orders.filter((order) => [DispatchOrderStatus.ASSIGNED, DispatchOrderStatus.IN_PROGRESS].includes(order.status)).length;
+  $("#dispatch-summary").textContent = t(lang, "dispatch.summary", { active, done: orders.filter((order) => order.status === DispatchOrderStatus.COMPLETED).length });
+  setHtml("#dispatch-orders", orders.length === 0
+    ? emptyState(t(lang, "dispatch.none"))
+    : table([t(lang, "col.order"), t(lang, "col.vehicle"), t(lang, "col.route"), t(lang, "col.staff"), t(lang, "col.time"), t(lang, "col.status"), ""],
+      orders.map((order) => `<tr data-order-id="${escapeHtml(order.id)}">
+        <td class="code">${escapeHtml(order.id)}</td>
+        <td><strong>${escapeHtml(order.vehicleId)}</strong></td>
+        <td>${escapeHtml(`${hubName(state, order.fromHubId)} → ${hubName(state, order.toHubId)}`)}</td>
+        <td class="code">${escapeHtml(order.staffId)}</td>
+        <td class="num">${escapeHtml(formatDateTime(lang, order.createdAt))}</td>
+        <td>${statusBadge(order.status, statusLabel(lang, order.status))}</td>
+        <td class="actions">${order.status === DispatchOrderStatus.ASSIGNED ? actionButton("cancel-dispatch", t(lang, "action.cancel"), { "order-id": order.id }, "btn-sm btn-secondary") : ""}</td>
       </tr>`).join("")));
-}
-
-export function renderIncidentsPage(state, lang) {
-  const vehicles = state.vehicles.filter((vehicle) => vehicle.status !== VehicleStatus.FAILED);
-  setOptions("#incident-vehicle", vehicles.map((vehicle) => ({
-    value: vehicle.id,
-    label: `${vehicle.id} · ${hubName(state, vehicle.hubId)} · ${statusLabel(lang, vehicle.status)}`,
-  })), vehicles.length === 0 ? t(lang, "incident.noneAvailable") : null);
-  const points = state.chargingPoints.filter((point) => point.status !== ChargingPointStatus.UNAVAILABLE);
-  setOptions("#incident-charging-point", points.map((point) => ({
-    value: point.id,
-    label: `${point.id} · ${hubName(state, point.hubId)} · ${statusLabel(lang, point.status)}`,
-  })), points.length === 0 ? t(lang, "incident.noneAvailable") : null);
-
-  const open = state.incidents.filter((item) => item.status === IncidentStatus.OPEN).length;
-  document.querySelector("#incident-summary").textContent = t(lang, "incident.summary", { open, resolved: state.incidents.length - open });
-
-  const incidents = [...state.incidents].reverse();
-  setHtml("#incident-list", incidents.length === 0
-    ? emptyState(t(lang, "incident.none"))
-    : `<ul class="list incident-list">${incidents.map((incident) => {
-      const isOpen = incident.status === IncidentStatus.OPEN;
-      const resolveKey = incident.type === "vehicle_failure" ? "action.markRepaired" : "action.restorePoint";
-      const when = isOpen
-        ? t(lang, "incident.opened", { time: formatTime(lang, incident.openedAt) })
-        : t(lang, "incident.resolvedAt", { time: formatTime(lang, incident.resolvedAt) });
-      return `<li data-incident-id="${escapeHtml(incident.id)}">
-        <div><span class="code">${escapeHtml(incident.id)}</span> <strong>${escapeHtml(t(lang, `incident.${incident.type}`))}</strong> · ${escapeHtml(incident.resourceId)} <span class="muted">· ${escapeHtml(hubName(state, incident.hubId))} · ${escapeHtml(when)}</span></div>
-        <div class="list-actions">${statusBadge(incident.status, statusLabel(lang, incident.status))}${isOpen ? `<button type="button" class="btn btn-sm" data-action="resolve-incident" data-incident-id="${escapeHtml(incident.id)}">${escapeHtml(t(lang, resolveKey))}</button>` : ""}</div>
-      </li>`;
-    }).join("")}</ul>`);
-}
-
-export function renderWhatIfPage(state, lang, view) {
-  setOptions("#scenario", Object.values(ScenarioType).map((value) => ({ value, label: t(lang, `scenario.${value}`) })));
-  const result = view.simulation;
-  if (!result) {
-    setHtml("#simulation-output", emptyState(t(lang, "whatif.empty")));
-    return;
-  }
-  const { impact } = result;
-  const none = t(lang, "common.none");
-  const row = (key, before, after) => `<tr${String(before) === String(after) ? "" : ` class="changed"`}><td>${escapeHtml(t(lang, key))}</td><td class="num">${escapeHtml(before)}</td><td class="num">${escapeHtml(after)}</td></tr>`;
-  setHtml("#simulation-output", `<article class="card">
-    <header class="card-header"><h2>${escapeHtml(t(lang, `scenario.${result.scenario.type}`))}</h2>
-      ${result.liveStateUnchanged ? badge(t(lang, "whatif.liveUnchanged"), "success") : badge(t(lang, "whatif.liveChanged"), "danger")}</header>
-    <div class="card-body">
-      <p class="muted">${result.notes.map((note) => escapeHtml(describe(lang, note))).join(" ")}</p>
-      <div class="split">
-        <table class="table"><thead><tr><th>${escapeHtml(t(lang, "col.metric"))}</th><th>${escapeHtml(t(lang, "col.before"))}</th><th>${escapeHtml(t(lang, "col.after"))}</th></tr></thead><tbody>
-          ${row("impact.parking", impact.parking.occupiedBefore, impact.parking.occupiedAfter)}
-          ${row("impact.topRisk", impact.parking.topRiskBefore ?? none, impact.parking.topRiskAfter ?? none)}
-          ${row("impact.vehicles", impact.vehicles.availableBefore, impact.vehicles.availableAfter)}
-          ${row("impact.queue", impact.charging.queuedBefore, impact.charging.queuedAfter)}
-          ${row("impact.points", impact.charging.availablePointsBefore, impact.charging.availablePointsAfter)}
-        </tbody></table>
-        <div><h3>${escapeHtml(t(lang, "whatif.recommendations"))}</h3><ol class="recommendations">${result.recommendations.map((item) => `<li>${escapeHtml(describe(lang, item))}</li>`).join("")}</ol></div>
-      </div>
-    </div>
-  </article>`);
 }

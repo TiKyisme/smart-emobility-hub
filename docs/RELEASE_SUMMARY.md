@@ -1,12 +1,16 @@
-# Release summary — UI redesign and complete flows (2026-11-20)
+# Release summary — use cases, web UI and reports synchronized (2026-11-21)
 
 | Item | Value |
 |---|---|
 | Repository | https://github.com/TiKyisme/smart-emobility-hub (public) |
-| Branch | `feature/ui-redesign`, based on `main` @ `c15cb0c` (merge of PR #1); normal push, no force |
-| Pull request | https://github.com/TiKyisme/smart-emobility-hub/pull/2 — open into `main`, **not merged** (owner review) |
-| Tested commit | `4b08beb459e979ae0f4268534ee0c23383e17d38`; this summary and the test evidence are added by the next commit on the same branch (`git log -1`) |
-| Previous release | PR #1 (`release/demo-readiness`) merged by the owner as `c15cb0c` |
+| Branch | `feature/uc-ui-sync`, based on `main` @ `3738c79` (merge of PR #2); normal push, no force |
+| Pull request | https://github.com/TiKyisme/smart-emobility-hub/pull/3 — into `main`, **not merged** (owner review) |
+| Tested commit | `9a7ad682d0c0a9224d2cb3aafc0e27926ed92c83`; the evidence, this summary and the manifest are added by the next commit on the same branch (`git log -1`) |
+| Previous releases | PR #1 (`c15cb0c`), PR #2 (`3738c79`), both merged by the owner |
+
+## Goal
+
+Check whether the use cases, the web UI and the submitted reports (Submission #1, [Submission #2](../submission2/Phase2_L03_13.pdf), [Submission #3](<../submission3/L03_13 (1).pdf>)) agree, and make them agree **without changing the submitted PDFs**. Full mapping and the remaining differences: [UC_UI_PDF_SYNC.md](UC_UI_PDF_SYNC.md) (Vietnamese).
 
 ## How to run
 
@@ -16,50 +20,53 @@
 
 | Check | Result |
 |---|---|
-| `npm test` (60 unit checks, no dependencies) | 60 pass / 0 fail |
-| Browser run, Chrome 157 | 101 PASS / 0 FAIL (incl. 25-step demo-script replay, no console/network errors) |
-| Browser run, Edge 157 | 101 PASS / 0 FAIL |
-| Static server on port 5173 | 20/20 assets HTTP 200 |
-| Published PDFs | committed byte-identical to the files on disk |
+| `npm test` (73 unit checks, no dependencies) | 73 pass / 0 fail |
+| Browser run, Chrome 157 | 130 PASS / 0 FAIL (incl. 23-step demo-script replay, no console/network errors) |
+| Browser run, Edge 157 | 130 PASS / 0 FAIL |
+| Static server on port 5173 | 28/28 assets HTTP 200 |
+| Submitted reports | unchanged |
 
 Evidence and screenshots: [docs/demo/DEMO_EVIDENCE.md](demo/DEMO_EVIDENCE.md).
 
-| Requirement | Status |
-|---|---|
-| FR-01..FR-03 Hub state, search, vehicle availability | Verified (unit + browser) |
-| FR-04, FR-06, FR-07 hold with countdown, cancel, expiry, pickup, return | Verified |
-| FR-05 parking holds within capacity, release | Verified |
-| FR-08, FR-09, FR-15 charging requests with automatic priority allocation, finish, cancel | Verified. Private-EV **time-slot selection** from the design is not implemented. |
-| FR-10..FR-13 KPIs, utilization ranking, redistribution, fleet | Verified. No numeric "approaching capacity" threshold (none in the assignment). |
-| FR-14 incidents: report and resolve (repair/restore) | Verified. Technician assignment from the mockup is design-only. |
-| FR-16..FR-18 five What-if scenarios on a copy | Verified; Save/Apply of a scenario is design-only. |
-| FR-19 simulated updates (manual, every 15 s) | Verified |
-| FR-20 Light/Dark + VI/EN (Vietnamese default) | Verified |
+## What was out of sync and what changed
 
-## What changed (on top of PR #1)
+| Area | Before | Now (matches the reports) |
+|---|---|---|
+| Actors / navigation | 2 portals, 6 self-named pages | 11 pages named like the use cases, grouped by actor, including the **Vehicle Dispatch Staff** and **Maintenance Staff** of the Submission #1 diagram |
+| UC-02 | Hub and battery filter | Location, destination, radius 0.1–5 km (Haversine), Hubs nearest first, type + battery filters, E1/E2/E3 |
+| UC-04 | One-click hold | Confirmation step, confirmed reservation details, A1/A2/A3, E1/E2/E3, reservation history; TC-UC04-01..11 automated |
+| UC-09 | Queue request | Hub + date + one-hour slot, availability check, review and confirm, alternatives, E1/E2, completion notice |
+| Smart charging | Upcoming usage first | ADR-05 priority, schedule per slot, operator adds shared vehicles, move/cancel/optimize |
+| Redistribution | Instant move | Plan → redistribution task → dispatch staff starts/completes |
+| UC-15 | Report → repaired | New → Assigned → In progress → Resolved, classification, confirm unavailable, operational branch |
+| UC-17 | Scenario + Hub | Demand %, offline ports, horizon, validation, impact cards, typed recommendations, save and apply |
+| Data | 4 Hubs, 6 vehicles | 12 Mobility Hubs (Submission #1 decision), 23 typed vehicles, 14 ports |
+| Design traceability | Different function names | Table 12 method names present in the code |
 
-1. `d0c5f4b` — interface redesign (sidebar, six pages, square corners, less text) and complete flows: automatic charging allocation, finish, cancellations, incident resolution, one trip per student, reset data.
-2. `26b2771` — tests: 60 unit checks, 101 browser checks.
-3. `aaf1112` — decisions D-014..D-018, architecture, traceability, demo package, screenshots, README.
-4. `4b08beb` — published reports `submission2/Phase2_L03_13.pdf` and `submission3/L03_13 (1).pdf` (team approval), release manifest.
+## Commits
 
-## Open items
+1. `6122f72` — web app aligned with the use cases (pages, services, data).
+2. `dc67752` — 73 unit checks, 130 browser checks, AT-01..AT-22.
+3. `02266df` — synchronization report, use case catalog, traceability, decisions D-019..D-026 with the ADR-01..06 mapping, architecture, requirement notes, README.
+4. `9a7ad68` — demo package and screenshots.
+5. (next) — test evidence, this summary, release manifest.
 
-1. Review and merge PR #2; rehearse once on the presentation laptop with [the checklist](demo/DEMO_CHECKLIST.md).
-2. `submission3/L03_13.pdf` (broken page 7) was deleted by the owner on 2026-11-20 07:39 (Recycle Bin); an identical copy stays at `submission3/report_builder/out/L03_13.pdf`.
-3. Not published (by choice, see [manifest](RELEASE_MANIFEST.md)): report sources, teammates' diagram files, mockups, archives.
-4. Design-only items to mention if asked: time slots, technician assignment, What-if Save/Apply, multi-user server, persistence.
+## Open items for the owner
+
+1. Review and merge the pull request; rehearse once with [the checklist](demo/DEMO_CHECKLIST.md).
+2. The Submission #3 report lists `submission3/report_source_manifest.md` and `submission3/METHOD_COVERAGE_AUDIT.md` as repository documents; they exist locally but are not published. Publish them only if the team agrees ([manifest](RELEASE_MANIFEST.md)).
+3. Points that are wrong inside the submitted PDFs (UC-12 vs UC-15 in Submission #2, UC IDs of FR-10..FR-13 in Table 12) are documented, not fixable in the PDFs.
 
 ## Next steps for a teammate
 
 ```powershell
 git fetch origin
-git switch feature/ui-redesign      # or main after PR #2 is merged
-npm test                            # expect 60 pass
+git switch feature/uc-ui-sync      # or main after the pull request is merged
+npm test                           # expect 73 pass
 python -m http.server 5173 --bind 127.0.0.1
 ```
 
-The owner's local `main` still points at `04bf4c1`. After merging, a non-destructive way to align it:
+The owner's local `main` still points at `04bf4c1` (its only extra commit is the UC-04 diagram commit already contained in `origin/main` as `75fc30b`). A non-destructive way to align it:
 
 ```powershell
 git fetch origin

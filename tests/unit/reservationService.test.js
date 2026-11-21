@@ -1,206 +1,192 @@
-// FR-04..FR-07 / UC-04..UC-07 / AT-04..AT-07, NFR-02, NFR-03, D-014
+// UC-04 Reserve Shared Vehicle (incl. TC-UC04-01..11 of the Submission #3 appendix), UC-05 parking,
+// UC-06 pickup and UC-07 return.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { schedulePrivateEvCharging, submitChargingRequest } from "../../src/services/chargingService.js";
-import { summarizeHub } from "../../src/services/hubService.js";
+import { ChargingRequestStatus, ReservationStatus, VehicleStatus } from "../../src/domain/status.js";
+import { createChargingSession, scheduleSharedVehicleCharging } from "../../src/services/chargingService.js";
+import { getAvailableSlotsCount } from "../../src/services/hubService.js";
 import {
   cancelParkingReservation,
   cancelReservation,
   expireReservations,
   getActiveTrip,
+  getStudentReservations,
+  getTripHistory,
   pickUpVehicle,
   RESERVATION_HOLD_DURATION_MS,
-  reserveParking,
+  reserveParkingSpace,
   reserveVehicle,
   returnVehicle,
 } from "../../src/services/reservationService.js";
-import { CAMPUS, DORM, freshStore, hub, METRO, point, requestFor, SERVICE, T0, vehicle } from "./helpers.js";
+import { simulateStateReadError } from "../../src/services/simulatorService.js";
+import { freshStore, hub, LIB, METRO, MINUTE, NVH, OTHER, slotAt, STUDENT, T0, UEL, vehicle } from "./helpers.js";
 
-test("AT-04: reserving an available vehicle records createdAt/expiresAt and holds it for the student", () => {
+test("TC-UC04-01: an available vehicle is reserved, held and time-stamped", () => {
   const store = freshStore();
-  const result = reserveVehicle(store, { studentId: "A", vehicleId: "EV-01", now: T0 });
-
+  const result = reserveVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 });
   assert.equal(result.ok, true);
   assert.equal(result.code, "vehicle_reserved");
-  assert.equal(result.reservation.id, "RSV-001");
-  assert.equal(RESERVATION_HOLD_DURATION_MS, 15 * 60 * 1000, "D-007 default hold is 15 minutes");
-  assert.equal(Date.parse(result.reservation.createdAt), T0);
-  assert.equal(Date.parse(result.reservation.expiresAt), T0 + RESERVATION_HOLD_DURATION_MS);
-  assert.equal(result.reservation.status, "active");
-  assert.equal(vehicle(store, "EV-01").status, "reserved");
+  assert.equal(vehicle(store, "EB-101").status, VehicleStatus.RESERVED);
+  assert.equal(result.reservation.status, ReservationStatus.ACTIVE);
+  assert.equal(result.reservation.createdAt, new Date(T0).toISOString());
+  assert.equal(Date.parse(result.reservation.expiresAt) - T0, RESERVATION_HOLD_DURATION_MS);
 });
 
-test("NFR-02: a second student cannot reserve a vehicle that is already held", () => {
+test("TC-UC04-02 / E3: a vehicle held by another student is refused as a conflict; nothing changes", () => {
   const store = freshStore();
-  assert.equal(reserveVehicle(store, { studentId: "A", vehicleId: "EV-01", now: T0 }).ok, true);
-  const second = reserveVehicle(store, { studentId: "B", vehicleId: "EV-01", now: T0 + 1_000 });
-  assert.equal(second.ok, false);
-  assert.equal(second.code, "vehicle_not_available");
-  assert.equal(store.getState().reservations.filter((item) => item.status === "active").length, 1);
+  reserveVehicle(store, { studentId: OTHER, vehicleId: "EB-101", now: T0 });
+  const before = JSON.stringify(store.getState());
+  const result = reserveVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 + MINUTE });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "reservation_conflict");
+  assert.equal(JSON.stringify(store.getState()), before);
 });
 
-test("D-014: a student holds or uses one vehicle at a time", () => {
-  const store = freshStore();
-  reserveVehicle(store, { studentId: "A", vehicleId: "EV-01", now: T0 });
-  const second = reserveVehicle(store, { studentId: "A", vehicleId: "EV-02", now: T0 + 1 });
-  assert.equal(second.ok, false);
-  assert.equal(second.code, "student_has_trip");
-  assert.equal(vehicle(store, "EV-02").status, "available");
-
-  pickUpVehicle(store, { studentId: "A", vehicleId: "EV-01", now: T0 + 2 });
-  assert.equal(reserveVehicle(store, { studentId: "A", vehicleId: "EV-02", now: T0 + 3 }).code, "student_has_trip");
-  returnVehicle(store, { vehicleId: "EV-01", destinationHubId: DORM, studentId: "A" });
-  assert.equal(getActiveTrip(store.getState(), "A", T0 + 4), null);
-  assert.equal(reserveVehicle(store, { studentId: "A", vehicleId: "EV-02", now: T0 + 5 }).ok, true);
-});
-
-test("FR-04 expiry boundary: active 1 ms before expiresAt, expired exactly at expiresAt", () => {
-  const store = freshStore();
-  const { reservation } = reserveVehicle(store, { studentId: "A", vehicleId: "EV-01", now: T0 });
-  const expiresAt = Date.parse(reservation.expiresAt);
-
-  assert.deepEqual(expireReservations(store, expiresAt - 1).expired, []);
-  assert.equal(vehicle(store, "EV-01").status, "reserved");
-
-  const expired = expireReservations(store, expiresAt);
-  assert.deepEqual(expired.expired, [reservation.id]);
-  assert.deepEqual(expired.vehicles, ["EV-01"]);
-  assert.equal(vehicle(store, "EV-01").status, "available");
-  assert.equal(store.getState().reservations[0].status, "expired");
-});
-
-test("FR-04 alternative flow: after expiry another student may reserve the released vehicle", () => {
-  const store = freshStore();
-  reserveVehicle(store, { studentId: "A", vehicleId: "EV-01", now: T0 });
-  const later = reserveVehicle(store, { studentId: "B", vehicleId: "EV-01", now: T0 + RESERVATION_HOLD_DURATION_MS });
-  assert.equal(later.ok, true);
-  assert.deepEqual(store.getState().reservations.map((item) => item.status), ["expired", "active"]);
-});
-
-test("UC-04 A1: the student can cancel a hold before pickup", () => {
-  const store = freshStore();
-  assert.equal(cancelReservation(store, { studentId: "A", vehicleId: "EV-01", now: T0 }).code, "hold_not_found");
-  reserveVehicle(store, { studentId: "A", vehicleId: "EV-01", now: T0 });
-  assert.equal(cancelReservation(store, { studentId: "B", vehicleId: "EV-01", now: T0 + 1 }).code, "hold_not_found");
-
-  const cancelled = cancelReservation(store, { studentId: "A", vehicleId: "EV-01", now: T0 + 2 });
-  assert.equal(cancelled.code, "hold_cancelled");
-  assert.equal(store.getState().reservations[0].status, "cancelled");
-  assert.equal(vehicle(store, "EV-01").status, "available");
-});
-
-test("D-007: a demo hold duration is honoured; invalid values fall back to the 15-minute default", () => {
-  const store = freshStore();
-  const short = reserveVehicle(store, { studentId: "A", vehicleId: "EV-01", now: T0, holdDurationMs: 30_000 });
-  assert.equal(Date.parse(short.reservation.expiresAt) - T0, 30_000);
-
-  for (const invalid of [-5, 0, Number.NaN, "60"]) {
-    const other = freshStore();
-    const result = reserveVehicle(other, { studentId: "A", vehicleId: "EV-01", now: T0, holdDurationMs: invalid });
-    assert.equal(Date.parse(result.reservation.expiresAt) - T0, RESERVATION_HOLD_DURATION_MS, `fallback for ${invalid}`);
-  }
-});
-
-test("AT-06: pickup requires the same student's active, unexpired hold", () => {
-  const store = freshStore();
-  assert.equal(pickUpVehicle(store, { studentId: "A", vehicleId: "EV-01", now: T0 }).code, "reservation_required");
-
-  reserveVehicle(store, { studentId: "A", vehicleId: "EV-01", now: T0 });
-  const wrongStudent = pickUpVehicle(store, { studentId: "B", vehicleId: "EV-01", now: T0 + 1 });
-  assert.equal(wrongStudent.code, "reservation_other_student");
-  assert.equal(vehicle(store, "EV-01").status, "reserved");
-
-  const pickup = pickUpVehicle(store, { studentId: "A", vehicleId: "EV-01", now: T0 + 2 });
-  assert.equal(pickup.code, "vehicle_picked_up");
-  assert.equal(vehicle(store, "EV-01").status, "in_use");
-  assert.equal(store.getState().reservations[0].status, "in_use");
-  assert.equal(hub(store, METRO).occupiedParking, 3, "the vehicle leaves its origin parking space");
-  assert.deepEqual(expireReservations(store, T0 + 10 * RESERVATION_HOLD_DURATION_MS).expired, [], "an in-use trip never expires");
-});
-
-test("AT-06: pickup after the hold expired is rejected and the vehicle is released", () => {
-  const store = freshStore();
-  reserveVehicle(store, { studentId: "A", vehicleId: "EV-01", now: T0 });
-  const late = pickUpVehicle(store, { studentId: "A", vehicleId: "EV-01", now: T0 + RESERVATION_HOLD_DURATION_MS });
-  assert.equal(late.code, "reservation_expired");
-  assert.equal(vehicle(store, "EV-01").status, "available");
-});
-
-test("pickup withdraws the vehicle's charging request that is still waiting at the Hub", () => {
-  const store = freshStore();
-  submitChargingRequest(store, { studentId: "X", hubId: METRO, vehicleId: "EV-02" }); // takes CP-01
-  schedulePrivateEvCharging(store, { studentId: "X", hubId: METRO, vehicleLabel: "PRIV-1", battery: 50 }); // takes CP-02
-  submitChargingRequest(store, { studentId: "X", hubId: METRO, vehicleId: "EV-01" }); // waits
-  assert.equal(requestFor(store, "EV-01").status, "queued");
-
-  reserveVehicle(store, { studentId: "A", vehicleId: "EV-01", now: Date.now() });
-  pickUpVehicle(store, { studentId: "A", vehicleId: "EV-01" });
-  assert.equal(requestFor(store, "EV-01").status, "cancelled");
-});
-
-test("AT-07: return needs an in-use vehicle and a destination with free capacity (physical + held)", () => {
-  const store = freshStore();
-  assert.equal(returnVehicle(store, { vehicleId: "EV-01", destinationHubId: DORM }).code, "return_not_in_use");
-
-  reserveVehicle(store, { studentId: "A", vehicleId: "EV-01", now: T0 });
-  pickUpVehicle(store, { studentId: "A", vehicleId: "EV-01", now: T0 + 1 });
-  for (let i = 0; i < 3; i += 1) assert.equal(reserveParking(store, { studentId: "P", hubId: DORM }).ok, true);
-
-  const full = returnVehicle(store, { vehicleId: "EV-01", destinationHubId: DORM, studentId: "A" });
-  assert.equal(full.code, "return_hub_full");
-  assert.equal(vehicle(store, "EV-01").status, "in_use");
-
-  const done = returnVehicle(store, { vehicleId: "EV-01", destinationHubId: CAMPUS, studentId: "A" });
-  assert.equal(done.code, "vehicle_returned");
-  assert.equal(vehicle(store, "EV-01").hubId, CAMPUS);
-  assert.equal(vehicle(store, "EV-01").status, "available");
-  assert.equal(store.getState().reservations[0].status, "completed");
-  assert.equal(store.getState().reservations[0].returnHubId, CAMPUS);
-  assert.equal(hub(store, CAMPUS).occupiedParking, 6);
-});
-
-test("AT-07 ownership: another student cannot return a vehicle that is in use", () => {
-  const store = freshStore();
-  reserveVehicle(store, { studentId: "A", vehicleId: "EV-01", now: T0 });
-  pickUpVehicle(store, { studentId: "A", vehicleId: "EV-01", now: T0 + 1 });
-  assert.equal(returnVehicle(store, { vehicleId: "EV-01", destinationHubId: CAMPUS, studentId: "B" }).code, "return_not_owner");
-});
-
-test("AT-05 / NFR-03: parking holds never exceed Hub capacity, and cancelling frees the space", () => {
-  const store = freshStore();
-  const ids = [];
-  for (let i = 0; i < 4; i += 1) ids.push(reserveParking(store, { studentId: "A", hubId: METRO }).reservation.id);
-  assert.deepEqual(ids, ["PRK-001", "PRK-002", "PRK-003", "PRK-004"]);
-
-  assert.equal(reserveParking(store, { studentId: "A", hubId: METRO }).code, "parking_full");
-  assert.equal(summarizeHub(store.getState(), METRO).parkingAvailable, 0);
-
-  assert.equal(cancelParkingReservation(store, { studentId: "B", reservationId: "PRK-001" }).code, "parking_not_found");
-  assert.equal(cancelParkingReservation(store, { studentId: "A", reservationId: "PRK-001" }).code, "parking_cancelled");
-  assert.equal(summarizeHub(store.getState(), METRO).parkingAvailable, 1);
-  assert.equal(reserveParking(store, { studentId: "A", hubId: SERVICE }).params.available, 2);
-});
-
-test("releasing a private EV's space stops its session and hands the point to the next request", () => {
-  const store = freshStore();
-  submitChargingRequest(store, { studentId: "A", hubId: METRO, vehicleId: "EV-02" }); // CP-01
-  const charging = schedulePrivateEvCharging(store, { studentId: "A", hubId: METRO, vehicleLabel: "PRIV-1", battery: 40 }); // CP-02
-  submitChargingRequest(store, { studentId: "A", hubId: METRO, vehicleId: "EV-01" }); // waits
-  assert.equal(charging.request.chargingPointId, "CP-02");
-
-  cancelParkingReservation(store, { studentId: "A", reservationId: charging.parkingReservation.id });
-  assert.equal(requestFor(store, "PRIV-1").status, "cancelled");
-  assert.equal(requestFor(store, "EV-01").chargingPointId, "CP-02");
-  assert.equal(point(store, "CP-02").status, "occupied");
-});
-
-test("input guards: unknown vehicle/Hub and missing identity are rejected without state changes", () => {
+test("TC-UC04-03: an unknown vehicle id is refused without touching the store", () => {
   const store = freshStore();
   const before = JSON.stringify(store.getState());
-  assert.equal(reserveVehicle(store, { studentId: "A", vehicleId: "EV-99", now: T0 }).code, "vehicle_not_found");
-  assert.equal(reserveVehicle(store, { vehicleId: "EV-01", now: T0 }).code, "student_required");
-  assert.equal(reserveParking(store, { studentId: "A", hubId: "H-NOPE" }).code, "hub_not_found");
-  assert.equal(pickUpVehicle(store, { studentId: "A", vehicleId: "EV-99", now: T0 }).code, "vehicle_not_found");
-  assert.equal(returnVehicle(store, { vehicleId: "EV-01", destinationHubId: "H-NOPE" }).code, "return_not_found");
+  assert.equal(reserveVehicle(store, { studentId: STUDENT, vehicleId: "EB-999", now: T0 }).code, "vehicle_not_found");
   assert.equal(JSON.stringify(store.getState()), before);
+});
+
+test("TC-UC04-04 / A3: an expired hold becomes Expired and the vehicle is available again", () => {
+  const store = freshStore();
+  const { reservation } = reserveVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 });
+  const expiresAt = Date.parse(reservation.expiresAt);
+  assert.deepEqual(expireReservations(store, expiresAt - 1).expired, []);
+  const result = expireReservations(store, expiresAt);
+  assert.deepEqual(result.expired, [reservation.id]);
+  assert.equal(store.getState().reservations[0].status, ReservationStatus.EXPIRED);
+  assert.equal(vehicle(store, "EB-101").status, VehicleStatus.AVAILABLE);
+});
+
+test("TC-UC04-05: expiry never touches trips in use or completed", () => {
+  const store = freshStore();
+  reserveVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 });
+  pickUpVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 + MINUTE });
+  reserveVehicle(store, { studentId: OTHER, vehicleId: "EM-203", now: T0 });
+  pickUpVehicle(store, { studentId: OTHER, vehicleId: "EM-203", now: T0 + MINUTE });
+  returnVehicle(store, { vehicleId: "EM-203", destinationHubId: METRO, studentId: OTHER, now: T0 + 2 * MINUTE });
+  const result = expireReservations(store, T0 + 10 * RESERVATION_HOLD_DURATION_MS);
+  assert.deepEqual(result.expired, []);
+  assert.equal(vehicle(store, "EB-101").status, VehicleStatus.IN_USE);
+  assert.deepEqual(store.getState().reservations.map((item) => item.status), [ReservationStatus.IN_USE, ReservationStatus.COMPLETED]);
+});
+
+test("TC-UC04-06: two students reserving the same vehicle — exactly one succeeds", () => {
+  const store = freshStore();
+  const results = [STUDENT, OTHER].map((studentId) => reserveVehicle(store, { studentId, vehicleId: "EB-102", now: T0 }));
+  assert.deepEqual(results.map((item) => item.ok), [true, false]);
+  assert.equal(store.getState().reservations.filter((item) => item.vehicleId === "EB-102").length, 1);
+});
+
+test("TC-UC04-07: pickup before expiry starts the trip (Reserved → In use)", () => {
+  const store = freshStore();
+  reserveVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 });
+  const result = pickUpVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 + 14 * MINUTE });
+  assert.equal(result.code, "vehicle_picked_up");
+  assert.equal(vehicle(store, "EB-101").status, VehicleStatus.IN_USE);
+  assert.equal(getActiveTrip(store.getState(), STUDENT, T0 + 14 * MINUTE).status, ReservationStatus.IN_USE);
+  assert.equal(hub(store, METRO).occupiedParking, 3, "the vehicle left its space");
+});
+
+test("TC-UC04-08: pickup after expiry is refused and the vehicle is not put in use", () => {
+  const store = freshStore();
+  reserveVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 });
+  const result = pickUpVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 + RESERVATION_HOLD_DURATION_MS });
+  assert.equal(result.code, "reservation_expired");
+  assert.equal(vehicle(store, "EB-101").status, VehicleStatus.AVAILABLE);
+});
+
+test("TC-UC04-09 (A1): without confirmation no reservation exists — the confirm step is tested in the browser run (S2)", () => {
+  const store = freshStore();
+  assert.equal(store.getState().reservations.length, 0);
+  assert.equal(vehicle(store, "EB-101").status, VehicleStatus.AVAILABLE);
+});
+
+test("TC-UC04-10 / E2: an unreadable vehicle state creates no reservation; a retry after the error succeeds", () => {
+  const store = freshStore();
+  simulateStateReadError(store, { vehicleId: "EB-101", now: T0, durationMs: 10000 });
+  const failed = reserveVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 + 5000 });
+  assert.equal(failed.code, "state_unavailable");
+  assert.equal(store.getState().reservations.length, 0);
+  assert.equal(vehicle(store, "EB-101").status, VehicleStatus.AVAILABLE);
+  assert.equal(reserveVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 + 10000 }).ok, true);
+});
+
+test("TC-UC04-11: a student's history contains only that student's reservations, newest first", () => {
+  const store = freshStore();
+  reserveVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 });
+  reserveVehicle(store, { studentId: OTHER, vehicleId: "EM-203", now: T0 });
+  cancelReservation(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 + MINUTE });
+  reserveVehicle(store, { studentId: STUDENT, vehicleId: "EB-102", now: T0 + 2 * MINUTE });
+  const mine = getStudentReservations(store.getState(), STUDENT).vehicles;
+  assert.deepEqual(mine.map((item) => item.vehicleId), ["EB-101", "EB-102"]);
+  assert.ok(mine.every((item) => item.studentId === STUDENT));
+  assert.deepEqual(getTripHistory(store.getState(), STUDENT).map((item) => item.vehicleId), ["EB-102", "EB-101"]);
+});
+
+test("E1: a vehicle that is no longer available (charging, failed) is refused", () => {
+  const store = freshStore();
+  assert.equal(reserveVehicle(store, { studentId: STUDENT, vehicleId: "EM-201", now: T0 }).code, "vehicle_not_available");
+  store.update((draft) => { draft.vehicles.find((item) => item.id === "EB-101").status = VehicleStatus.FAILED; });
+  assert.equal(reserveVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 }).code, "vehicle_not_available");
+});
+
+test("D-014: one trip per student; cancelling the hold frees the vehicle", () => {
+  const store = freshStore();
+  reserveVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 });
+  assert.equal(reserveVehicle(store, { studentId: STUDENT, vehicleId: "EM-203", now: T0 }).code, "student_has_trip");
+  assert.equal(cancelReservation(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 + MINUTE }).code, "hold_cancelled");
+  assert.equal(vehicle(store, "EB-101").status, VehicleStatus.AVAILABLE);
+  assert.equal(reserveVehicle(store, { studentId: STUDENT, vehicleId: "EM-203", now: T0 + 2 * MINUTE }).ok, true);
+});
+
+test("pickup requires the student's own active hold", () => {
+  const store = freshStore();
+  assert.equal(pickUpVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 }).code, "reservation_required");
+  reserveVehicle(store, { studentId: OTHER, vehicleId: "EB-101", now: T0 });
+  assert.equal(pickUpVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 }).code, "reservation_other_student");
+});
+
+test("UC-07: return only to a Hub with a free space; the trip is completed", () => {
+  const store = freshStore();
+  reserveVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 });
+  pickUpVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 + MINUTE });
+  store.update((draft) => { draft.hubs.find((item) => item.id === UEL).occupiedParking = 8; });
+  assert.equal(returnVehicle(store, { vehicleId: "EB-101", destinationHubId: UEL, studentId: STUDENT }).code, "return_hub_full");
+  assert.equal(returnVehicle(store, { vehicleId: "EB-101", destinationHubId: LIB, studentId: OTHER }).code, "return_not_owner");
+  const result = returnVehicle(store, { vehicleId: "EB-101", destinationHubId: LIB, studentId: STUDENT, now: T0 + 30 * MINUTE });
+  assert.equal(result.code, "vehicle_returned");
+  assert.equal(vehicle(store, "EB-101").hubId, LIB);
+  assert.equal(vehicle(store, "EB-101").status, VehicleStatus.AVAILABLE);
+  assert.equal(hub(store, LIB).occupiedParking, 4);
+  const trip = store.getState().reservations[0];
+  assert.equal(trip.status, ReservationStatus.COMPLETED);
+  assert.equal(trip.returnHubId, LIB);
+});
+
+test("UC-05: parking holds stay within capacity and can be released", () => {
+  const store = freshStore();
+  const free = getAvailableSlotsCount(store.getState(), NVH);
+  for (let index = 0; index < free; index += 1) {
+    assert.equal(reserveParkingSpace(store, { studentId: STUDENT, hubId: NVH, now: T0 }).code, "parking_reserved");
+  }
+  assert.equal(reserveParkingSpace(store, { studentId: STUDENT, hubId: NVH, now: T0 }).code, "parking_full");
+  const [first] = getStudentReservations(store.getState(), STUDENT).parking;
+  assert.equal(cancelParkingReservation(store, { studentId: OTHER, reservationId: first.id }).code, "parking_not_found");
+  assert.equal(cancelParkingReservation(store, { studentId: STUDENT, reservationId: first.id }).code, "parking_cancelled");
+  assert.equal(getAvailableSlotsCount(store.getState(), NVH), 1);
+});
+
+test("pickup withdraws the vehicle's charging request that has not started", () => {
+  const store = freshStore();
+  // Fill both METRO ports for the current slot so the shared request is booked for a later slot.
+  createChargingSession(store, { studentId: OTHER, hubId: METRO, slotStart: slotAt(0), vehicleLabel: "59A-1", battery: 40, now: T0 });
+  createChargingSession(store, { studentId: OTHER, hubId: METRO, slotStart: slotAt(0), vehicleLabel: "59A-2", battery: 40, now: T0 });
+  const booked = scheduleSharedVehicleCharging(store, { vehicleId: "EB-102", now: T0 });
+  assert.equal(booked.code, "charging_scheduled");
+  reserveVehicle(store, { studentId: STUDENT, vehicleId: "EB-102", now: T0 });
+  pickUpVehicle(store, { studentId: STUDENT, vehicleId: "EB-102", now: T0 + MINUTE });
+  assert.equal(store.getState().chargingRequests.find((item) => item.vehicleId === "EB-102").status, ChargingRequestStatus.CANCELLED);
 });

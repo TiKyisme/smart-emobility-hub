@@ -14,15 +14,22 @@
           <span class="brand-name">Smart E-Mobility Hub</span>
           <span class="brand-sub" data-i18n="app.area">Khu đô thị ĐHQG-HCM</span>
         </div>
+        <!-- Pages = use cases of the Submission #1 diagram, grouped by actor. -->
         <nav class="nav" aria-label="Main">
           <p class="nav-group" data-i18n="nav.groupStudent">Cổng sinh viên</p>
-          <a class="nav-link" href="#find" data-page="find" data-i18n="nav.find">Tìm & đặt xe</a>
-          <a class="nav-link" href="#services" data-page="services" data-i18n="nav.services">Đỗ xe & sạc</a>
+          <a class="nav-link" href="#find" data-page="find" data-i18n="nav.find">Tìm Hub / phương tiện</a>
+          <a class="nav-link" href="#reserve" data-page="reserve" data-i18n="nav.reserve">Đặt giữ xe dùng chung</a>
+          <a class="nav-link" href="#parking" data-page="parking" data-i18n="nav.parking">Đặt chỗ đỗ xe</a>
+          <a class="nav-link" href="#evcharge" data-page="evcharge" data-i18n="nav.evcharge">Đặt lịch sạc xe cá nhân</a>
           <p class="nav-group" data-i18n="nav.groupOperator">Cổng vận hành</p>
           <a class="nav-link" href="#network" data-page="network" data-i18n="nav.network">Giám sát mạng lưới</a>
-          <a class="nav-link" href="#charging" data-page="charging" data-i18n="nav.charging">Sạc thông minh</a>
-          <a class="nav-link" href="#incidents" data-page="incidents" data-i18n="nav.incidents">Sự cố</a>
+          <a class="nav-link" href="#charging" data-page="charging" data-i18n="nav.charging">Quản lý sạc thông minh</a>
+          <a class="nav-link" href="#redistribution" data-page="redistribution" data-i18n="nav.redistribution">Điều phối xe</a>
+          <a class="nav-link" href="#incidents" data-page="incidents" data-i18n="nav.incidents">Xử lý sự cố vận hành</a>
           <a class="nav-link" href="#whatif" data-page="whatif" data-i18n="nav.whatif">Mô phỏng What-if</a>
+          <p class="nav-group" data-i18n="nav.groupStaff">Nhân viên hiện trường</p>
+          <a class="nav-link" href="#dispatch" data-page="dispatch" data-i18n="nav.dispatch">Thực hiện điều chuyển</a>
+          <a class="nav-link" href="#maintenance" data-page="maintenance" data-i18n="nav.maintenance">Xử lý sự cố được giao</a>
         </nav>
         <div class="sidebar-footer">
           <button id="reset-data" type="button" class="btn btn-ghost" data-i18n="action.reset">Đặt lại dữ liệu</button>
@@ -34,7 +41,7 @@
         <header class="topbar">
           <div class="page-heading">
             <span id="page-portal" class="crumb">Cổng sinh viên</span>
-            <h1 id="page-title">Tìm & đặt xe</h1>
+            <h1 id="page-title">Tìm Hub / phương tiện</h1>
           </div>
           <div class="topbar-actions">
             <button id="simulate-update" type="button" class="btn btn-secondary" data-i18n="top.update">Cập nhật dữ liệu</button>
@@ -51,138 +58,245 @@
         <div class="statusline" aria-live="polite">
           <span class="live-mark" aria-hidden="true"></span>
           <span class="statusline-label" data-i18n="status.live">Dữ liệu mô phỏng</span>
-          <span id="last-update">Đã nạp trạng thái mô phỏng ban đầu.</span>
+          <span id="last-update">Đã nạp dữ liệu ban đầu.</span>
         </div>
 
         <main id="main" tabindex="-1">
-          <!-- Student portal: Find & reserve (FR-01..FR-04, FR-06, FR-07) -->
+          <!-- UC-02 Find Suitable Hub / Vehicle (FR-01..FR-03) -->
           <section id="page-find" class="page" data-page="find">
-            <div id="hub-tiles" class="tiles"></div>
+            <article class="card">
+              <header class="card-header"><h2 data-i18n="find.searchTitle">Tìm Hub phù hợp</h2><span id="find-freshness"></span></header>
+              <div class="filters">
+                <label class="field"><span data-i18n="find.origin">Vị trí của bạn</span><select id="search-origin"></select></label>
+                <label class="field"><span data-i18n="find.destination">Điểm đến (tùy chọn)</span><select id="search-destination"></select></label>
+                <label class="field field-narrow"><span data-i18n="find.radius">Bán kính (km)</span><input id="search-radius" type="number" min="0.1" max="5" step="0.1" value="1" /></label>
+              </div>
+              <div id="hub-results" class="card-body flush"></div>
+            </article>
+            <article class="card">
+              <header class="card-header"><h2 id="vehicles-title">Phương tiện</h2></header>
+              <div class="filters">
+                <label class="field"><span data-i18n="find.vehicleType">Loại xe</span><select id="vehicle-type"></select></label>
+                <label class="field field-narrow"><span data-i18n="find.minBattery">Pin tối thiểu (%)</span><input id="minimum-battery" type="number" min="0" max="100" step="5" value="0" /></label>
+              </div>
+              <div id="vehicle-results" class="card-body flush"></div>
+            </article>
+          </section>
+
+          <!-- UC-04 Reserve Shared Vehicle, UC-06 Pick Up, UC-07 Return (FR-04, FR-06, FR-07) -->
+          <section id="page-reserve" class="page" data-page="reserve" hidden>
             <div class="layout-main-side">
               <article class="card">
-                <header class="card-header"><h2 data-i18n="find.title">Phương tiện</h2></header>
-                <div class="filters">
-                  <label class="field"><span data-i18n="find.hub">Hub</span><select id="vehicle-search-hub"></select></label>
-                  <label class="field field-narrow"><span data-i18n="find.minBattery">Pin tối thiểu (%)</span><input id="minimum-battery" type="number" min="0" max="100" step="5" value="0" /></label>
-                  <div class="filter-checks">
-                    <label class="check"><input id="only-available" type="checkbox" checked /><span data-i18n="find.onlyAvailable">Chỉ xe sẵn sàng</span></label>
-                    <label class="check"><input id="charging-required" type="checkbox" /><span data-i18n="find.freeCharger">Có trụ trống</span></label>
-                    <label class="check"><input id="parking-required" type="checkbox" /><span data-i18n="find.freeParking">Còn chỗ đỗ</span></label>
-                  </div>
-                </div>
-                <div id="search-results" class="card-body flush"></div>
+                <header class="card-header"><h2 id="reserve-title">Đặt giữ xe dùng chung</h2><span id="reserve-state"></span></header>
+                <div id="reserve-panel" class="card-body"></div>
               </article>
               <article class="card">
-                <header class="card-header"><h2 data-i18n="trip.title">Chuyến đi của tôi</h2></header>
-                <div id="my-trip" class="card-body"></div>
+                <header class="card-header"><h2 data-i18n="reserve.nextTitle">Bước tiếp theo</h2></header>
+                <div id="reserve-next" class="card-body"></div>
                 <p id="hold-duration" class="card-foot"></p>
+              </article>
+            </div>
+            <article class="card">
+              <header class="card-header"><h2 data-i18n="history.title">Lịch sử đặt xe</h2></header>
+              <div id="trip-history" class="card-body flush"></div>
+            </article>
+          </section>
+
+          <!-- UC-05 Reserve Parking Space (FR-05) -->
+          <section id="page-parking" class="page" data-page="parking" hidden>
+            <div class="layout-two">
+              <article class="card">
+                <header class="card-header"><h2 data-i18n="parking.title">Đặt chỗ đỗ xe</h2></header>
+                <div class="card-body stack">
+                  <div class="form-row">
+                    <label class="field field-wide"><span data-i18n="parking.hub">Hub</span><select id="parking-hub"></select></label>
+                    <button id="reserve-parking" type="button" class="btn" data-i18n="parking.reserve">Giữ chỗ</button>
+                  </div>
+                  <p class="muted" data-i18n="parking.hint">Chỗ được giữ đến khi bạn hủy và được tính vào sức chứa của Hub.</p>
+                </div>
+              </article>
+              <article class="card">
+                <header class="card-header"><h2 data-i18n="parking.mine">Chỗ đỗ đang giữ</h2></header>
+                <div id="my-parking" class="card-body flush"></div>
               </article>
             </div>
           </section>
 
-          <!-- Student portal: Parking & charging (FR-05, FR-08, FR-09) -->
-          <section id="page-services" class="page" data-page="services" hidden>
+          <!-- UC-09 Schedule Private EV Charging (FR-08, FR-09) -->
+          <section id="page-evcharge" class="page" data-page="evcharge" hidden>
             <div class="layout-two">
               <article class="card">
-                <header class="card-header"><h2 data-i18n="parking.title">Giữ chỗ đỗ xe</h2></header>
+                <header class="card-header"><h2 data-i18n="ev.formTitle">Đặt lịch sạc</h2></header>
                 <div class="card-body">
-                  <div class="form-row">
-                    <label class="field"><span data-i18n="parking.hub">Hub</span><select id="parking-hub"></select></label>
-                    <button id="reserve-parking" type="button" class="btn" data-i18n="parking.reserve">Giữ chỗ</button>
+                  <div class="form-grid">
+                    <label class="field"><span data-i18n="ev.hub">Mobility Hub</span><select id="ev-hub"></select></label>
+                    <label class="field"><span data-i18n="ev.date">Ngày sạc</span><select id="ev-date"></select></label>
+                    <label class="field"><span data-i18n="ev.slot">Khung giờ</span><select id="ev-slot"></select></label>
+                    <label class="field"><span data-i18n="ev.label">Biển số / tên xe</span><input id="ev-label" type="text" maxlength="40" value="59A-123.45" /></label>
+                    <label class="field"><span data-i18n="ev.battery">Pin hiện tại (%)</span><input id="ev-battery" type="number" min="0" max="100" value="35" /></label>
+                    <label class="check"><input id="ev-upcoming" type="checkbox" /><span data-i18n="ev.upcoming">Cần xe sớm (khởi hành sớm)</span></label>
                   </div>
-                  <h3 data-i18n="parking.mine">Chỗ đỗ đang giữ</h3>
-                  <div id="my-parking"></div>
+                  <div class="form-row"><button id="ev-check" type="button" class="btn" data-i18n="ev.check">Kiểm tra & xem chi tiết</button></div>
+                  <details class="demo"><summary data-i18n="common.demo">Mô phỏng ngoại lệ (demo)</summary>
+                    <div class="button-row"><button id="ev-sim-port-error" type="button" class="btn btn-sm btn-secondary" data-i18n="action.simPortError">Không đọc được trạng thái cổng sạc (E2)</button></div>
+                  </details>
                 </div>
               </article>
               <article class="card">
-                <header class="card-header">
-                  <h2 data-i18n="charging.title">Yêu cầu sạc</h2>
-                  <div class="segmented" role="group">
-                    <button type="button" data-charging-type="shared" data-i18n="charging.shared">Xe dùng chung</button>
-                    <button type="button" data-charging-type="private" data-i18n="charging.private">Xe cá nhân</button>
-                  </div>
-                </header>
-                <div class="card-body">
-                  <div class="form-grid">
-                    <label class="field"><span data-i18n="charging.hub">Hub</span><select id="charging-hub"></select></label>
-                    <label id="charging-vehicle-field" class="field"><span data-i18n="charging.vehicle">Xe</span><select id="charging-vehicle"></select></label>
-                    <label id="private-label-field" class="field" hidden><span data-i18n="charging.label">Biển số / tên xe</span><input id="private-vehicle-label" type="text" maxlength="40" value="59A-123.45" /></label>
-                    <label id="private-battery-field" class="field" hidden><span data-i18n="charging.battery">Pin hiện tại (%)</span><input id="charging-battery" type="number" min="0" max="100" value="35" /></label>
-                    <label class="check"><input id="upcoming-usage" type="checkbox" /><span data-i18n="charging.upcoming">Cần dùng sớm</span></label>
-                  </div>
-                  <div class="form-row">
-                    <button id="submit-charging" type="button" class="btn">Gửi yêu cầu sạc</button>
-                    <span id="charging-hint" class="muted"></span>
-                  </div>
-                </div>
+                <header class="card-header"><h2 data-i18n="ev.bookingTitle">Chi tiết đặt lịch</h2></header>
+                <div id="ev-booking" class="card-body"></div>
               </article>
             </div>
             <article class="card">
-              <header class="card-header"><h2 data-i18n="charging.mine">Yêu cầu sạc của tôi</h2></header>
+              <header class="card-header"><h2 data-i18n="ev.mine">Lịch sạc của tôi</h2><span id="ev-notice" class="muted"></span></header>
               <div id="my-charging" class="card-body flush"></div>
             </article>
           </section>
 
-          <!-- Operator portal: Network monitor (FR-10..FR-13) -->
+          <!-- Monitor Network Status (FR-10..FR-12) -->
           <section id="page-network" class="page" data-page="network" hidden>
             <div id="operator-metrics" class="kpis"></div>
+            <article class="card">
+              <header class="card-header"><h2 data-i18n="alerts.title">Cảnh báo vận hành</h2>
+                <div class="form-row compact">
+                  <label class="field field-xs"><span data-i18n="alerts.overloadThreshold">Ngưỡng quá tải (%)</span><input id="threshold-overload" type="number" min="50" max="100" step="5" /></label>
+                  <label class="field field-xs"><span data-i18n="alerts.shortageThreshold">Thiếu xe khi dưới (xe)</span><input id="threshold-shortage" type="number" min="0" max="10" step="1" /></label>
+                  <button id="save-thresholds" type="button" class="btn btn-sm btn-secondary" data-i18n="action.saveThresholds">Lưu ngưỡng</button>
+                </div>
+              </header>
+              <div id="alert-list" class="card-body flush"></div>
+            </article>
             <article class="card">
               <header class="card-header"><h2 data-i18n="network.title">Mạng lưới Hub</h2><span class="muted" data-i18n="network.rule">Xếp theo mức sử dụng chỗ đỗ (đang đỗ + đang giữ)</span></header>
               <div id="network-table" class="card-body flush"></div>
             </article>
-            <div class="layout-side-main">
-              <article class="card">
-                <header class="card-header"><h2 data-i18n="redistribution.title">Điều phối xe</h2></header>
-                <div id="redistribution-panel" class="card-body"></div>
-              </article>
-              <article class="card">
-                <header class="card-header"><h2 data-i18n="fleet.title">Đội xe</h2></header>
-                <div id="fleet-table" class="card-body flush"></div>
-              </article>
-            </div>
+            <article class="card">
+              <header class="card-header"><h2 data-i18n="fleet.title">Đội xe</h2></header>
+              <div id="fleet-table" class="card-body flush"></div>
+            </article>
           </section>
 
-          <!-- Operator portal: Smart charging (FR-15) -->
+          <!-- Manage Smart Charging (FR-15) -->
           <section id="page-charging" class="page" data-page="charging" hidden>
             <article class="card">
-              <header class="card-header"><h2 data-i18n="points.title">Trụ sạc</h2></header>
-              <div id="points-table" class="card-body flush"></div>
+              <div class="card-body form-row">
+                <label class="field field-wide"><span data-i18n="charging.hub">Hub</span><select id="charging-hub"></select></label>
+                <span id="charging-summary" class="muted"></span>
+              </div>
             </article>
+            <div class="layout-two">
+              <article class="card">
+                <header class="card-header"><h2 data-i18n="points.title">Cổng sạc</h2></header>
+                <div id="points-table" class="card-body flush"></div>
+              </article>
+              <article class="card">
+                <header class="card-header"><h2 data-i18n="charging.addTitle">Thêm xe dùng chung vào lịch sạc</h2></header>
+                <div class="card-body">
+                  <div class="form-grid">
+                    <label class="field"><span data-i18n="charging.vehicle">Xe</span><select id="charging-vehicle"></select></label>
+                    <label class="check"><input id="charging-upcoming" type="checkbox" /><span data-i18n="charging.upcoming">Cần dùng sớm</span></label>
+                  </div>
+                  <div class="form-row"><button id="submit-charging" type="button" class="btn" data-i18n="charging.submit">Xếp lịch sạc</button></div>
+                  <p id="charging-hint" class="muted"></p>
+                </div>
+              </article>
+            </div>
             <article class="card">
-              <header class="card-header"><h2 data-i18n="queue.title">Hàng đợi ưu tiên</h2><span class="muted" data-i18n="queue.rule">Cần dùng sớm trước, sau đó pin thấp hơn</span></header>
-              <div id="charging-queue" class="card-body flush"></div>
+              <header class="card-header"><h2 data-i18n="schedule.title">Lịch sạc & hàng đợi ưu tiên</h2>
+                <button id="optimize-queue" type="button" class="btn btn-sm btn-secondary" data-i18n="action.optimize">Tối ưu lịch</button></header>
+              <p class="card-note" data-i18n="schedule.rule">Ưu tiên: khởi hành sớm hoặc pin dưới 20 %, rồi pin thấp hơn, rồi thời điểm đăng ký</p>
+              <div id="charging-schedule" class="card-body flush"></div>
             </article>
           </section>
 
-          <!-- Operator portal: Incidents (FR-14) -->
-          <section id="page-incidents" class="page" data-page="incidents" hidden>
-            <div class="layout-side-main">
+          <!-- Redistribute Vehicles (FR-13) -->
+          <section id="page-redistribution" class="page" data-page="redistribution" hidden>
+            <div class="layout-two">
               <article class="card">
-                <header class="card-header"><h2 data-i18n="incident.record">Ghi nhận sự cố</h2></header>
-                <div class="card-body stack">
-                  <label class="field"><span data-i18n="incident.vehicle">Phương tiện</span><select id="incident-vehicle"></select></label>
-                  <button id="report-vehicle-failure" type="button" class="btn btn-danger" data-i18n="incident.reportVehicle">Báo xe hỏng</button>
-                  <label class="field"><span data-i18n="incident.point">Trụ sạc</span><select id="incident-charging-point"></select></label>
-                  <button id="report-charging-failure" type="button" class="btn btn-danger" data-i18n="incident.reportPoint">Báo trụ ngừng hoạt động</button>
-                </div>
+                <header class="card-header"><h2 data-i18n="redistribution.planTitle">Đề xuất điều phối</h2></header>
+                <div id="redistribution-plan" class="card-body"></div>
               </article>
               <article class="card">
-                <header class="card-header"><h2 data-i18n="incident.list">Danh sách sự cố</h2><span id="incident-summary" class="muted"></span></header>
-                <div id="incident-list" class="card-body flush"></div>
+                <header class="card-header"><h2 data-i18n="dispatch.createTitle">Tạo lệnh điều chuyển</h2></header>
+                <div class="card-body">
+                  <div class="form-grid">
+                    <label class="field"><span data-i18n="dispatch.from">Hub nguồn</span><select id="dispatch-from"></select></label>
+                    <label class="field"><span data-i18n="dispatch.vehicle">Xe</span><select id="dispatch-vehicle"></select></label>
+                    <label class="field"><span data-i18n="dispatch.to">Hub đích</span><select id="dispatch-to"></select></label>
+                  </div>
+                  <div class="form-row"><button id="create-dispatch" type="button" class="btn">Giao cho DISPATCH-DEMO</button></div>
+                </div>
+              </article>
+            </div>
+            <article class="card">
+              <header class="card-header"><h2 data-i18n="dispatch.ordersTitle">Lệnh điều chuyển</h2><span id="dispatch-summary" class="muted"></span></header>
+              <div id="dispatch-orders" class="card-body flush"></div>
+            </article>
+          </section>
+
+          <!-- UC-15 Handle Operational Incident (FR-14) -->
+          <section id="page-incidents" class="page" data-page="incidents" hidden>
+            <div id="incident-kpis" class="kpis"></div>
+            <div class="layout-side-main">
+              <div class="stack">
+                <article class="card">
+                  <header class="card-header"><h2 data-i18n="incident.record">Ghi nhận sự cố</h2></header>
+                  <div class="card-body stack">
+                    <label class="field"><span data-i18n="incident.vehicle">Phương tiện</span><select id="incident-vehicle"></select></label>
+                    <button id="report-vehicle-failure" type="button" class="btn btn-danger" data-i18n="incident.reportVehicle">Ghi nhận sự cố xe</button>
+                    <label class="field"><span data-i18n="incident.point">Cổng sạc</span><select id="incident-charging-point"></select></label>
+                    <button id="report-charging-failure" type="button" class="btn btn-danger" data-i18n="incident.reportPoint">Ghi nhận sự cố cổng sạc</button>
+                  </div>
+                </article>
+                <article class="card">
+                  <header class="card-header"><h2 data-i18n="incident.list">Danh sách sự cố</h2></header>
+                  <div id="incident-list" class="card-body flush"></div>
+                </article>
+              </div>
+              <article class="card">
+                <header class="card-header"><h2 data-i18n="incident.detailTitle">Chi tiết sự cố</h2><span id="incident-detail-status"></span></header>
+                <div id="incident-detail" class="card-body"></div>
               </article>
             </div>
           </section>
 
-          <!-- Operator portal: What-if simulation (FR-16..FR-18) -->
+          <!-- UC-17 Run What-if Simulation, UC-18 recommendations (FR-16..FR-18) -->
           <section id="page-whatif" class="page" data-page="whatif" hidden>
+            <p class="notice" data-i18n="whatif.banner">Chế độ mô phỏng: chạy trên bản sao trạng thái mạng lưới hiện tại; dữ liệu vận hành thật không thay đổi.</p>
+            <div class="layout-side-main">
+              <article class="card">
+                <header class="card-header"><h2 data-i18n="whatif.configTitle">1. Cấu hình kịch bản</h2></header>
+                <div class="card-body stack">
+                  <label class="field"><span data-i18n="whatif.scenario">Mẫu kịch bản</span><select id="scenario"></select></label>
+                  <label class="field"><span data-i18n="whatif.hub">Hub mục tiêu</span><select id="scenario-hub"></select></label>
+                  <label class="field"><span data-i18n="whatif.demand">Mức tăng nhu cầu dự kiến (%)</span><input id="scenario-demand" type="number" min="0" max="500" step="10" value="150" /></label>
+                  <label class="field"><span id="scenario-offline-label">Số cổng sạc giả lập ngừng</span><input id="scenario-offline" type="number" min="0" step="1" value="0" /></label>
+                  <label class="field"><span data-i18n="whatif.horizon">Khoảng thời gian</span><select id="scenario-horizon"><option value="1">1</option><option value="2" selected>2</option><option value="4">4</option></select></label>
+                  <div class="button-row">
+                    <button id="run-simulation" type="button" class="btn" data-i18n="whatif.run">Chạy mô phỏng</button>
+                    <button id="reset-scenario" type="button" class="btn btn-secondary" data-i18n="whatif.reset">Đặt lại tham số</button>
+                  </div>
+                  <div id="saved-scenarios"></div>
+                </div>
+              </article>
+              <div id="simulation-output" class="stack"></div>
+            </div>
+          </section>
+
+          <!-- Execute Redistribution Task (Vehicle Dispatch Staff, FR-DIS-1..8) -->
+          <section id="page-dispatch" class="page" data-page="dispatch" hidden>
             <article class="card">
-              <div class="card-body form-row">
-                <label class="field field-wide"><span data-i18n="whatif.scenario">Kịch bản</span><select id="scenario"></select></label>
-                <label class="field"><span data-i18n="whatif.hub">Hub trọng tâm</span><select id="scenario-hub"></select></label>
-                <button id="run-simulation" type="button" class="btn" data-i18n="whatif.run">Chạy mô phỏng</button>
-              </div>
+              <header class="card-header"><h2 data-i18n="dispatchStaff.title">Nhiệm vụ điều chuyển được giao</h2><span id="dispatch-staff-summary" class="muted"></span></header>
+              <div id="dispatch-tasks" class="card-body flush"></div>
             </article>
-            <div id="simulation-output"></div>
+          </section>
+
+          <!-- Resolve Assigned Incident (Maintenance Staff, FR-MNT-1..6) -->
+          <section id="page-maintenance" class="page" data-page="maintenance" hidden>
+            <article class="card">
+              <header class="card-header"><h2 data-i18n="maintenance.title">Sự cố được giao</h2><span id="maintenance-summary" class="muted"></span></header>
+              <div id="maintenance-tasks" class="card-body flush"></div>
+            </article>
           </section>
         </main>
       </div>
