@@ -1,71 +1,110 @@
-// FR-16..FR-18 / UC-17, UC-18 / AT-16..AT-18
+// UC-17 Run What-if Simulation / UC-18 recommendations (FR-16..FR-18, ADR-06, D-013).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { reserveVehicle } from "../../src/services/reservationService.js";
-import { runWhatIf, ScenarioType } from "../../src/services/simulationService.js";
-import { DORM, freshStore, METRO, T0 } from "./helpers.js";
+import { ChargingPointStatus, DispatchOrderStatus } from "../../src/domain/status.js";
+import {
+  applyCoordination,
+  requestSimulation,
+  saveToLibrary,
+  SCENARIO_DEFAULTS,
+  ScenarioType,
+  validateParams,
+} from "../../src/services/simulationService.js";
+import { DORM, DORM_B, freshStore, METRO, point, T0 } from "./helpers.js";
 
-const occupied = (state, hubId) => state.hubs.find((item) => item.id === hubId).occupiedParking;
+const run = (state, type, overrides = {}) => requestSimulation(state, { type, ...SCENARIO_DEFAULTS[type], ...overrides }, { now: T0 });
 
-test("AT-16..AT-18: every scenario runs on a copy, reports impact and recommendations, and keeps live state", () => {
+test("validateParams: demand not negative, whole numbers, offline ports up to the Hub total, known horizon", () => {
+  const state = freshStore().getState();
+  const base = { type: ScenarioType.HUB_FULL, hubId: METRO, demandIncreasePercent: 20, offlinePorts: 0, horizonHours: 2 };
+  assert.equal(validateParams(state, { ...base, type: "unknown" }).code, "scenario_unknown");
+  assert.equal(validateParams(state, { ...base, hubId: "NOPE" }).code, "hub_not_found");
+  assert.equal(validateParams(state, { ...base, demandIncreasePercent: -1 }).code, "param_demand_invalid");
+  assert.equal(validateParams(state, { ...base, demandIncreasePercent: 2.5 }).code, "param_demand_invalid");
+  assert.equal(validateParams(state, { ...base, demandIncreasePercent: "" }).code, "param_demand_invalid");
+  assert.equal(validateParams(state, { ...base, offlinePorts: 3 }).code, "param_ports_invalid", "the Metro Hub has 2 ports");
+  assert.equal(validateParams(state, { ...base, horizonHours: 3 }).code, "param_horizon_invalid");
+  assert.deepEqual(validateParams(state, base).params, base);
+});
+
+test("every template runs on a copy: the live state is byte-identical afterwards (FR-16, D-013)", () => {
   const store = freshStore();
-  const live = store.getState();
-  const before = structuredClone(live);
-
+  const before = JSON.stringify(store.getState());
   for (const type of Object.values(ScenarioType)) {
-    const result = runWhatIf(live, { type, hubId: METRO });
-    assert.deepEqual(live, before, `${type} must not mutate the live state`);
-    assert.equal(result.liveStateUnchanged, true);
-    assert.notDeepEqual(result.simulatedState, before, `${type} must change the hypothetical state`);
-    assert.ok(result.recommendations.length >= 1);
-    for (const item of [...result.recommendations, ...result.notes]) assert.ok(item.code && item.message);
-    assert.ok(result.impact.parking && result.impact.vehicles && result.impact.charging);
+    const outcome = run(store.getState(), type);
+    assert.equal(outcome.code, "simulation_done", type);
+    assert.equal(outcome.result.liveStateUnchanged, true, type);
+    assert.ok(outcome.result.hubs.some((card) => card.target), `${type} shows the target Hub`);
+    assert.ok(outcome.result.hubs.length <= 4);
+    assert.ok(outcome.result.recommendations.length > 0);
   }
+  assert.equal(JSON.stringify(store.getState()), before);
 });
 
-test("scenario effects match their description", () => {
-  const live = freshStore().getState();
-
-  const surge = runWhatIf(live, { type: ScenarioType.METRO_ARRIVAL_SURGE, hubId: DORM });
-  assert.equal(occupied(surge.simulatedState, METRO), occupied(live, METRO) + 3, "the Metro surge always targets Metro");
-
-  const full = runWhatIf(live, { type: ScenarioType.HUB_FULL, hubId: DORM });
-  assert.equal(occupied(full.simulatedState, DORM), 10);
-  assert.equal(full.impact.parking.topRiskAfter, "Dormitory Hub");
-  assert.ok(full.recommendations.some((item) => item.code === "rec_redirect"));
-
-  // Three extra requests at Metro: the two free chargers are allocated by priority, one waits.
-  const demand = runWhatIf(live, { type: ScenarioType.CHARGING_DEMAND_SURGE, hubId: METRO });
-  assert.equal(demand.impact.charging.queuedAfter - demand.impact.charging.queuedBefore, 1);
-  assert.equal(demand.impact.charging.availablePointsBefore - demand.impact.charging.availablePointsAfter, 2);
-  assert.deepEqual(
-    demand.simulatedState.chargingRequests.filter((item) => item.status === "scheduled" && item.hubId === METRO).map((item) => item.id).sort(),
-    ["SIM-CHARGE-01", "SIM-CHARGE-03"],
-    "the two requests marked needed-soon are served first",
-  );
-  assert.ok(demand.recommendations.some((item) => item.code === "rec_charging"));
-
-  const failures = runWhatIf(live, { type: ScenarioType.CHARGING_POINT_FAILURES, hubId: DORM });
-  assert.equal(failures.notes[0].params.pointId, "CP-03", "the focus Hub's charger fails first");
-  assert.equal(failures.simulatedState.vehicles.find((item) => item.id === "EV-04").status, "available", "its session is interrupted");
-
-  const concentration = runWhatIf(live, { type: ScenarioType.VEHICLE_CONCENTRATION, hubId: METRO });
-  assert.equal(concentration.impact.vehicles.moved, 2);
-  assert.equal(concentration.simulatedState.vehicles.filter((item) => item.hubId === METRO).length, 4);
+test("peak-hour surge at the Metro station: critical bottleneck, vehicles redistributed from the surplus Hub, riders redirected", () => {
+  const { result } = run(freshStore().getState(), ScenarioType.METRO_ARRIVAL_SURGE);
+  const metro = result.impact.find((card) => card.hubId === METRO);
+  assert.equal(metro.status, "critical");
+  assert.equal(metro.before.parkingPercent, 50);
+  assert.ok(metro.after.parkingPercent >= 85);
+  assert.ok(metro.after.vehicles < 0, "vehicle shortage");
+  const redistribute = result.recommendations.find((item) => item.kind === "redistribute");
+  assert.equal(redistribute.fromHubId, DORM_B, "KTX Khu B has the most movable vehicles");
+  assert.equal(redistribute.toHubId, METRO);
+  assert.ok(redistribute.count >= 1);
+  assert.ok(result.recommendations.some((item) => item.kind === "user_redirect"));
+  assert.equal(result.hubs.find((card) => card.hubId === DORM_B).status, "surplus");
 });
 
-test("FR-16: the simulation starts from the current live state, including earlier live actions", () => {
+test("a Hub reaching full capacity: over the threshold and a redirect to the nearest Hub with space", () => {
+  const { result } = run(freshStore().getState(), ScenarioType.HUB_FULL);
+  const dorm = result.impact.find((card) => card.hubId === DORM);
+  assert.equal(dorm.status, "critical");
+  assert.ok(dorm.after.parkingPercent > 100);
+  const redirect = result.recommendations.find((item) => item.kind === "user_redirect");
+  assert.equal(redirect.code, "rec_redirect");
+  assert.notEqual(redirect.hubId, DORM);
+});
+
+test("charging demand surge and port failures: charging load and a [Smart Charging] recommendation", () => {
+  const state = freshStore().getState();
+  const surge = run(state, ScenarioType.CHARGING_DEMAND_SURGE).result;
+  const metro = surge.impact.find((card) => card.hubId === METRO);
+  assert.ok(metro.after.chargingPercent > 100);
+  assert.equal(metro.status, "critical");
+  assert.ok(surge.recommendations.some((item) => item.kind === "smart_charging"));
+  const failures = run(state, ScenarioType.CHARGING_POINT_FAILURES, { offlinePorts: 2 }).result;
+  assert.equal(failures.simulatedState.chargingPoints.filter((item) => item.hubId === METRO && item.status === ChargingPointStatus.UNAVAILABLE).length, 2);
+  assert.ok(failures.recommendations.some((item) => item.kind === "smart_charging"));
+  assert.equal(state.chargingPoints.find((item) => item.id === "CP-01").status, ChargingPointStatus.AVAILABLE, "live port untouched");
+});
+
+test("vehicle concentration: the target Hub overflows and vehicles are sent away", () => {
+  const { result } = run(freshStore().getState(), ScenarioType.VEHICLE_CONCENTRATION);
+  const target = result.impact.find((card) => card.target);
+  assert.ok(target.after.parkingPercent >= 85);
+  const recommendation = result.recommendations.find((item) => item.kind === "redistribute");
+  assert.equal(recommendation.fromHubId, target.hubId);
+});
+
+test("timeout branch and saving a scenario to the library", () => {
   const store = freshStore();
-  reserveVehicle(store, { studentId: "A", vehicleId: "EV-01", now: T0 });
-  const result = runWhatIf(store.getState(), { type: ScenarioType.VEHICLE_CONCENTRATION, hubId: DORM });
-
-  assert.equal(result.impact.vehicles.availableBefore, 4, "the reserved EV-01 is not available in the starting state");
-  assert.equal(result.simulatedState.vehicles.find((item) => item.id === "EV-01").status, "reserved");
-  assert.equal(store.getState().vehicles.find((item) => item.id === "EV-01").hubId, METRO);
+  const params = { type: ScenarioType.HUB_FULL, ...SCENARIO_DEFAULTS[ScenarioType.HUB_FULL] };
+  assert.equal(requestSimulation(store.getState(), params, { now: T0, timeoutMs: -1 }).code, "simulation_timeout");
+  const saved = saveToLibrary(store, params, { critical: 1, now: T0 });
+  assert.equal(saved.code, "scenario_saved");
+  assert.deepEqual(store.getState().savedScenarios[0].params, params);
+  assert.equal(saveToLibrary(store, { ...params, demandIncreasePercent: -5 }).code, "param_demand_invalid");
 });
 
-test("an unknown scenario is reported, not silently treated as a supported one", () => {
-  const result = runWhatIf(freshStore().getState(), { type: "unknown", hubId: METRO });
-  assert.deepEqual(result.notes.map((item) => item.code), ["note_unknown"]);
-  assert.equal(result.liveStateUnchanged, true);
+test("Apply recommendations creates live tasks only when the operator asks (FR-18)", () => {
+  const store = freshStore();
+  const { result } = run(store.getState(), ScenarioType.METRO_ARRIVAL_SURGE);
+  assert.equal(store.getState().dispatchOrders.length, 0, "running the simulation created nothing");
+  const applied = applyCoordination(store, result.recommendations, T0);
+  assert.equal(applied.code, "coordination_applied");
+  const orders = store.getState().dispatchOrders;
+  assert.ok(orders.length >= 1);
+  assert.ok(orders.every((order) => order.toHubId === METRO && order.status === DispatchOrderStatus.ASSIGNED));
+  assert.equal(point(store, "CP-01").status, ChargingPointStatus.AVAILABLE);
 });

@@ -12,12 +12,15 @@ The lecturer slides present multiple architectural views (4+1) and architectural
 
 Responsibilities:
 
-- application shell with a sidebar for the two portals and six pages, selected through the URL hash (`#find`, `#services`, `#network`, `#charging`, `#incidents`, `#whatif`) — `src/ui/render.js`;
-- Student portal views: Find & reserve, Parking & charging — `src/ui/views/student.js`;
-- Operator portal views: Network monitor, Smart charging, Incidents, What-if — `src/ui/views/operator.js`;
-- collect user interaction and call services (`src/main.js`, one delegated click handler per action);
+- application shell with a sidebar of eleven pages, one per use case of the Submission #1 diagram and grouped by actor (Student portal, Operator portal, Field staff), selected through the URL hash (`#find`, `#reserve`, `#parking`, `#evcharge`, `#network`, `#charging`, `#redistribution`, `#incidents`, `#whatif`, `#dispatch`, `#maintenance`) — `src/ui/render.js`;
+- Student portal views: Find Suitable Hub / Vehicle (`ui/views/search.js`), Reserve Shared Vehicle (`ui/views/trip.js`), Reserve Parking Space and Schedule Private EV Charging (`ui/views/studentServices.js`);
+- Operator portal views: Monitor Network Status, Manage Smart Charging, Redistribute Vehicles (`ui/views/operator.js`), Handle Operational Incident (`ui/views/incidents.js`), Run What-if Simulation (`ui/views/whatif.js`);
+- Field staff views: Execute Redistribution Task, Resolve Assigned Incident (`ui/views/staff.js`);
+- collect user interaction and call services (`src/main.js`, one delegated click handler for every `data-action` button);
 - display current state, short success/error notifications (toast), recommendations and simulation results;
 - interface mode: Light/Dark and VI/EN text (`src/ui/i18n.js`, D-011); shared markup helpers in `src/ui/dom.js`.
+
+View functions carry the boundary-class method names of the Submission #3 design where one exists (for example `displayNearbyHubs`, `showReservationResult`, `displayBookingDetails`, `displayIncidentDetails`, `renderSetupForm`).
 
 ### Application / Business Services layer
 
@@ -25,12 +28,12 @@ Responsibilities:
 
 Responsibilities:
 
-- find suitable resources (`hubService.js`);
-- reservation workflow: hold, expiry, cancel, pickup, return, parking holds (`reservationService.js`);
-- charging requests, automatic priority allocation, session completion, cancellation (`chargingService.js`);
-- operator monitoring, capacity risk, incidents and their resolution, redistribution (`operatorService.js`);
-- what-if simulation orchestration (`simulationService.js`);
-- simulated state updates (`simulatorService.js`).
+- Hub search by location and radius, vehicle filters, resource availability (`hubService.js`);
+- reservation workflow: confirmation, hold, expiry, cancel, pickup, return, parking holds, trip history (`reservationService.js`);
+- charging time slots, availability check, booking, automatic priority allocation per slot, schedule, optimization, completion (`chargingService.js`);
+- operator monitoring and alert thresholds, redistribution orders for the dispatch staff, incident lifecycle and maintenance tasks (`operatorService.js`);
+- what-if simulation: parameter validation, run on a copy, impact, recommendations, scenario library (`simulationService.js`);
+- Data Simulator: periodic state updates and the exception demonstrations (`simulatorService.js`).
 
 Every service returns a result object `{ ok, code, params, message }` (`src/domain/result.js`). The `code` lets the presentation layer show the outcome in English or Vietnamese; the services themselves contain no presentation logic.
 
@@ -41,6 +44,7 @@ Every service returns a result object `{ ok, code, params, message }` (`src/doma
 Responsibilities:
 
 - statuses and result/identifier helpers (`status.js`, `result.js`, `ids.js`);
+- demo identities of the actors (`actors.js`), time slots (`time.js`), distances (`geo.js`) and entity operations such as `changeStatus`, `getBatteryLevel`, `isOperational` (`vehicle.js`);
 - live application state in a page-local store (`store.js`);
 - state mutation through explicit service operations; subscribers re-render after each update.
 
@@ -50,7 +54,7 @@ Responsibilities:
 
 Responsibilities:
 
-- initial simulated Hub/vehicle/parking/charging data;
+- initial simulated data: 12 Mobility Hubs and other campus places with simulated coordinates, typed vehicles, charging ports and the seeded charging session;
 - deterministic demo input.
 
 ## 3. 4+1 mapping for later submissions
@@ -85,6 +89,6 @@ Because the assignment permits a lightweight MVP with hard-coded data, the minim
 
 ## 6. Verification
 
-- `tests/unit/*.test.js` — Node built-in test runner (`npm test`), no dependencies: service rules, i18n completeness, DOM hooks, navigation, square-corner style rule and `node --check` of every module.
-- `tests/e2e/browser_acceptance.py` — optional Playwright run against the real page in Chrome/Edge, covering the demo paths of AT-01..AT-20 and replaying the demo script.
+- `tests/unit/*.test.js` — Node built-in test runner (`npm test`), no dependencies: service rules (including the TC-UC04-01..11 cases of the Submission #3 appendix), i18n completeness, navigation names equal to the use-case names, DOM hooks and actions, square-corner style rule and `node --check` of every module.
+- `tests/e2e/browser_acceptance.py` — optional Playwright run against the real page in Chrome/Edge, covering AT-01..AT-22, the alternative and exception flows of the five detailed use cases, and a replay of the demo script.
 - `tests/ACCEPTANCE_TESTS.md` — the manual acceptance cases.

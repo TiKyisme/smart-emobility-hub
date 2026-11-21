@@ -1,9 +1,5 @@
 // Small DOM helpers shared by the views. No framework: plain template strings + delegation.
 
-// D-003: fixed demo identities; authentication and accounts are out of scope.
-export const DEMO_STUDENT_ID = "STUDENT-DEMO";
-export const DEMO_OPERATOR_ID = "OPERATOR-DEMO";
-
 export function $(selector) {
   return document.querySelector(selector);
 }
@@ -33,46 +29,65 @@ export function setOptions(target, options, placeholder = null) {
   if (!select) return;
   const previous = select.value;
   const html = (placeholder === null ? "" : `<option value="">${escapeHtml(placeholder)}</option>`) + options
-    .map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`)
+    .map((option) => `<option value="${escapeHtml(option.value)}"${option.disabled ? " disabled" : ""}>${escapeHtml(option.label)}</option>`)
     .join("");
   if (lastMarkup.get(select) !== html) {
     lastMarkup.set(select, html);
     select.innerHTML = html;
   }
-  if (options.some((option) => option.value === previous)) select.value = previous;
+  const usable = options.filter((option) => !option.disabled);
+  if (usable.some((option) => option.value === previous)) select.value = previous;
   else if (placeholder !== null) select.value = "";
-  else if (options[0]) select.value = options[0].value;
+  else if (usable[0]) select.value = usable[0].value;
+}
+
+// Sets an input's value from state without overwriting what the user is typing.
+export function setInputValue(selector, value) {
+  const input = $(selector);
+  if (input && document.activeElement !== input && input.value !== String(value)) input.value = String(value);
 }
 
 export function numberValue(selector, fallback = 0) {
-  const value = Number($(selector)?.value);
-  return Number.isFinite(value) ? value : fallback;
+  const raw = $(selector)?.value;
+  const value = Number(raw);
+  return raw === "" || !Number.isFinite(value) ? fallback : value;
 }
 
 const TONES = Object.freeze({
   available: "success",
   completed: "success",
   resolved: "success",
+  surplus: "success",
   reserved: "warning",
   in_use: "warning",
   active: "warning",
+  assigned: "warning",
+  warning: "warning",
   charging: "info",
   scheduled: "info",
   occupied: "info",
+  in_progress: "info",
+  in_transit: "info",
   queued: "neutral",
   cancelled: "neutral",
+  normal: "neutral",
   failed: "danger",
   unavailable: "danger",
   expired: "danger",
-  open: "danger",
+  new: "danger",
+  critical: "danger",
 });
+
+export function toneOf(status) {
+  return TONES[status] ?? "neutral";
+}
 
 export function badge(text, tone = "neutral") {
   return `<span class="badge badge-${tone}">${escapeHtml(text)}</span>`;
 }
 
 export function statusBadge(status, label) {
-  return `<span class="badge badge-${TONES[status] ?? "neutral"}" data-status="${escapeHtml(status)}">${escapeHtml(label)}</span>`;
+  return `<span class="badge badge-${toneOf(status)}" data-status="${escapeHtml(status)}">${escapeHtml(label)}</span>`;
 }
 
 export function meter(ratio, tone = "accent") {
@@ -81,10 +96,28 @@ export function meter(ratio, tone = "accent") {
 }
 
 export function batteryCell(battery) {
-  const tone = battery < 30 ? "danger" : battery < 60 ? "warning" : "success";
+  const tone = battery < 20 ? "danger" : battery < 50 ? "warning" : "success";
   return `<span class="battery">${meter(battery / 100, tone)}<span class="num">${escapeHtml(battery)}%</span></span>`;
 }
 
 export function emptyState(text) {
   return `<p class="empty">${escapeHtml(text)}</p>`;
+}
+
+// Labelled values (reservation details, incident details, booking summary).
+export function detailList(rows) {
+  return `<dl class="details">${rows
+    .filter(Boolean)
+    .map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${value}</dd></div>`)
+    .join("")}</dl>`;
+}
+
+// A button handled by the delegated [data-action] listener in main.js.
+export function actionButton(action, label, data = {}, variant = "", disabled = false) {
+  const attributes = Object.entries(data).map(([key, value]) => ` data-${key}="${escapeHtml(value)}"`).join("");
+  return `<button type="button" class="btn${variant ? ` ${variant}` : ""}" data-action="${escapeHtml(action)}"${attributes}${disabled ? " disabled" : ""}>${escapeHtml(label)}</button>`;
+}
+
+export function table(headers, rows) {
+  return `<table class="table"><thead><tr>${headers.map((label) => `<th>${escapeHtml(label)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`;
 }

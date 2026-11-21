@@ -20,7 +20,7 @@ function jsFiles(directory) {
 
 test("node --check passes for every JavaScript module in src/", () => {
   const files = jsFiles("src");
-  assert.ok(files.length >= 17, `found ${files.length} modules`);
+  assert.ok(files.length >= 24, `found ${files.length} modules`);
   for (const file of files) {
     const run = spawnSync(process.execPath, ["--check", join(root, file)], { encoding: "utf8" });
     assert.equal(run.status, 0, `${file}: ${run.stderr}`);
@@ -42,7 +42,7 @@ test("every element id used by the scripts exists in index.html or is created by
   for (const source of scripts) for (const match of source.matchAll(/\bid="([\w-]+)"/g)) known.add(match[1]);
   const used = new Set();
   for (const source of scripts) for (const match of source.matchAll(/"#([\w-]+)"/g)) used.add(match[1]);
-  assert.ok(used.size >= 40, `found ${used.size} ids`);
+  assert.ok(used.size >= 70, `found ${used.size} ids`);
   for (const id of used) assert.ok(known.has(id), `#${id} is used by the scripts but never defined`);
 });
 
@@ -50,10 +50,22 @@ test("every navigation link has a page section and every section is reachable", 
   const html = read("index.html");
   const links = [...html.matchAll(/class="nav-link" href="#(\w+)" data-page="(\w+)"/g)];
   const sections = [...html.matchAll(/<section id="page-(\w+)" class="page" data-page="(\w+)"/g)].map((match) => match[2]);
+  assert.equal(links.length, 11);
   assert.deepEqual(links.map((match) => match[1]), links.map((match) => match[2]), "href and data-page agree");
   assert.deepEqual(links.map((match) => match[2]).sort(), [...sections].sort());
   const renderer = read("src/ui/render.js");
   for (const page of sections) assert.match(renderer, new RegExp(`\\b${page}: \\{ portal:`), `render.js handles ${page}`);
+});
+
+test("every data-action rendered by a view has a handler in main.js", () => {
+  const main = read("src/main.js");
+  const views = jsFiles("src/ui").map(read).join("\n");
+  const actions = new Set([
+    ...[...views.matchAll(/actionButton\(\s*"([\w-]+)"/g)].map((match) => match[1]),
+    ...[...views.matchAll(/data-action="([\w-]+)"/g)].map((match) => match[1]),
+  ]);
+  assert.ok(actions.size >= 30, `found ${actions.size} actions`);
+  for (const action of actions) assert.match(main, new RegExp(`"${action}":`), `main.js handles ${action}`);
 });
 
 test("owner requirement: boxes have square corners (no rounded border-radius)", () => {

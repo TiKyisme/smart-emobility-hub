@@ -1,189 +1,179 @@
-// FR-08, FR-09, FR-15 / UC-08, UC-09, UC-16 / AT-08, AT-09, AT-15, NFR-03, D-008, D-009, D-015
+// UC-09 Schedule Private EV Charging and Manage Smart Charging (FR-08, FR-09, FR-15; ADR-05, D-015, D-019).
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { ChargingPointStatus, ChargingRequestStatus, VehicleStatus } from "../../src/domain/status.js";
 import {
+  advanceChargingClock,
   buildChargingSchedule,
   cancelChargingRequest,
+  checkAvailability,
+  compareByPriority,
+  createChargingSession,
   finishCharging,
-  listChargeableVehicles,
+  getAvailableSlots,
+  isPriorityRequest,
+  optimizeQueue,
   priorityScore,
-  schedulePrivateEvCharging,
-  submitChargingRequest,
+  rescheduleChargingRequest,
+  scheduleSharedVehicleCharging,
 } from "../../src/services/chargingService.js";
-import { reportChargingPointUnavailable, reportVehicleFailure } from "../../src/services/operatorService.js";
-import { expireReservations, RESERVATION_HOLD_DURATION_MS, reserveParking, reserveVehicle } from "../../src/services/reservationService.js";
-import { DORM, freshStore, METRO, point, requestFor, SERVICE, T0, vehicle } from "./helpers.js";
+import { reserveVehicle } from "../../src/services/reservationService.js";
+import { simulateStateReadError } from "../../src/services/simulatorService.js";
+import { DORM, freshStore, METRO, MINUTE, NVH, OTHER, point, request, requestFor, slotAt, STUDENT, T0, vehicle } from "./helpers.js";
 
-const shared = (store, vehicleId, extra = {}) => submitChargingRequest(store, { studentId: "A", hubId: METRO, vehicleId, ...extra });
-const privateEv = (store, extra = {}) =>
-  schedulePrivateEvCharging(store, { studentId: "A", hubId: METRO, vehicleLabel: "PRIV-A", battery: 35, upcomingUsage: false, ...extra });
-const scheduledAt = (store, hubId) => store.getState().chargingRequests.filter((item) => item.hubId === hubId && item.status === "scheduled");
+const book = (store, label, { hubId = METRO, offset = 0, battery = 40, upcomingUsage = false, now = T0, studentId = STUDENT } = {}) =>
+  createChargingSession(store, { studentId, hubId, slotStart: slotAt(offset), vehicleLabel: label, battery, upcomingUsage, now });
 
-test("AT-08 / D-015: a request is charged immediately when a point is free, using the recorded battery", () => {
-  const store = freshStore();
-  const result = shared(store, "EV-02", { battery: 99, upcomingUsage: false });
-
-  assert.equal(result.code, "charging_started");
-  assert.equal(result.params.pointId, "CP-01");
-  assert.equal(result.request.id, "CHG-002", "CHG-001 is EV-04's seeded session");
-  assert.equal(result.request.battery, 28, "D-008: typed battery is ignored for shared vehicles");
-  assert.equal(result.request.upcomingUsage, true, "EV-02 is flagged for upcoming usage in the seed data");
-  assert.equal(vehicle(store, "EV-02").status, "charging");
-  assert.equal(point(store, "CP-01").status, "occupied");
+test("ADR-05 priority: battery below 20 % or early departure first, then lower battery, then registration time", () => {
+  assert.equal(isPriorityRequest({ battery: 19, upcomingUsage: false }), true);
+  assert.equal(isPriorityRequest({ battery: 20, upcomingUsage: false }), false);
+  assert.equal(isPriorityRequest({ battery: 90, upcomingUsage: true }), true);
+  assert.ok(priorityScore({ battery: 60, upcomingUsage: true }) > priorityScore({ battery: 25 }));
+  assert.ok(priorityScore({ battery: 10 }) > priorityScore({ battery: 60, upcomingUsage: true }));
+  const sorted = [
+    { id: "C", battery: 50, createdAt: "2026-11-20T08:03:00Z" },
+    { id: "A", battery: 50, createdAt: "2026-11-20T08:01:00Z" },
+    { id: "B", battery: 15, createdAt: "2026-11-20T08:05:00Z" },
+  ].sort(compareByPriority).map((item) => item.id);
+  assert.deepEqual(sorted, ["B", "A", "C"]);
 });
 
-test("AT-08: without a free point the request waits and reports its queue position", () => {
-  const store = freshStore();
-  shared(store, "EV-02");
-  privateEv(store);
-  const waiting = shared(store, "EV-01");
-  assert.equal(waiting.code, "charging_queued");
-  assert.equal(waiting.params.position, 1);
-  assert.equal(waiting.request.status, "queued");
-  assert.equal(vehicle(store, "EV-01").status, "available");
+test("getAvailableSlots / checkAvailability: free ports per slot; a full slot offers other slots and Hubs (A1)", () => {
+  const state = freshStore().getState();
+  const metro = getAvailableSlots(state, METRO, T0);
+  assert.equal(metro[0].slotStart, slotAt(0));
+  assert.equal(metro[0].free, 2);
+  assert.equal(checkAvailability(state, METRO, slotAt(0), T0).code, "slot_available");
+  // KTX Khu A has one port and EM-201 charges on it in the current slot.
+  const full = checkAvailability(state, DORM, slotAt(0), T0);
+  assert.equal(full.code, "slot_full");
+  assert.ok(full.alternatives.length > 0);
+  assert.equal(Date.parse(full.alternatives[0].slotStart), slotAt(1));
+  assert.ok(full.otherHubs.length > 0 && full.otherHubs.every((item) => item.hubId !== DORM && item.free > 0));
 });
 
-test("no double allocation: a vehicle cannot have two open requests", () => {
+test("checkAvailability: no working port (E1), unreadable port status (E2), invalid slots", () => {
   const store = freshStore();
-  shared(store, "EV-02");
-  privateEv(store);
-  assert.equal(shared(store, "EV-01").code, "charging_queued");
-  assert.equal(shared(store, "EV-01").code, "charging_duplicate");
-  assert.equal(shared(store, "EV-02").code, "charging_vehicle_charging");
-  assert.equal(store.getState().chargingRequests.filter((item) => item.vehicleId === "EV-01").length, 1);
+  store.update((draft) => { draft.chargingPoints.find((item) => item.id === "CP-14").status = ChargingPointStatus.UNAVAILABLE; });
+  assert.equal(checkAvailability(store.getState(), NVH, slotAt(1), T0).code, "slot_no_port");
+  simulateStateReadError(store, { hubId: METRO, now: T0, durationMs: 10000 });
+  assert.equal(checkAvailability(store.getState(), METRO, slotAt(1), T0 + 1000).code, "port_status_unavailable");
+  assert.equal(checkAvailability(store.getState(), METRO, slotAt(1), T0 + 10000).code, "slot_available");
+  assert.equal(checkAvailability(store.getState(), METRO, slotAt(-1), T0).code, "slot_invalid", "a slot that has ended");
+  assert.equal(checkAvailability(store.getState(), METRO, slotAt(0) + 30 * MINUTE, T0).code, "slot_invalid", "not on a full hour");
+  assert.equal(checkAvailability(store.getState(), METRO, slotAt(60), T0).code, "slot_invalid", "after tomorrow");
 });
 
-test("FR-08 guards and the list of chargeable vehicles agree", () => {
+test("createChargingSession: a later slot is booked (Scheduled); the current slot starts on a free port", () => {
   const store = freshStore();
-  assert.deepEqual(listChargeableVehicles(store.getState(), DORM).map((item) => item.id), ["EV-03"], "EV-04 is already charging");
-  assert.equal(submitChargingRequest(store, { studentId: "A", hubId: DORM, vehicleId: "EV-04" }).code, "charging_vehicle_charging");
-  assert.equal(shared(store, "EV-01", { hubId: DORM }).code, "charging_hub_mismatch");
-  assert.equal(shared(store, "").code, "vehicle_required");
-  assert.equal(shared(store, "EV-99").code, "vehicle_not_found");
-  assert.equal(submitChargingRequest(store, { hubId: METRO, vehicleId: "EV-01" }).code, "student_required");
-
-  reserveVehicle(store, { studentId: "B", vehicleId: "EV-01", now: Date.now() });
-  assert.equal(shared(store, "EV-01").code, "charging_vehicle_busy");
-  reportVehicleFailure(store, "EV-02");
-  assert.equal(shared(store, "EV-02").code, "charging_vehicle_failed");
-  assert.deepEqual(listChargeableVehicles(store.getState(), METRO), []);
+  const later = book(store, "59A-123.45", { offset: 3 });
+  assert.equal(later.code, "session_scheduled");
+  assert.equal(later.request.status, ChargingRequestStatus.SCHEDULED);
+  assert.equal(later.request.chargingPointId, null);
+  const now = book(store, "51A-111.11");
+  assert.equal(now.code, "session_started");
+  assert.equal(now.request.status, ChargingRequestStatus.CHARGING);
+  assert.equal(point(store, now.request.chargingPointId).status, ChargingPointStatus.OCCUPIED);
 });
 
-test("AT-15 / FR-15: a freed point goes to the highest-priority waiting request, never beyond capacity", () => {
+test("createChargingSession: input checks, duplicate label and slot capacity (NFR-03)", () => {
   const store = freshStore();
-  shared(store, "EV-02"); // CP-01
-  privateEv(store); // CP-02
-  shared(store, "EV-01"); // waits, priority 18
-  const urgent = privateEv(store, { vehicleLabel: "PRIV-URGENT", battery: 10, upcomingUsage: true }); // priority 1090
-  const medium = privateEv(store, { vehicleLabel: "PRIV-MID", battery: 50 }); // priority 50
-
-  assert.equal(priorityScore(urgent.request), 1090);
-  assert.equal(urgent.params.position, 1, "jumps ahead of the earlier EV-01 request");
-  assert.deepEqual(buildChargingSchedule(store.getState(), METRO).waiting.map((item) => item.vehicleLabel), ["PRIV-URGENT", "PRIV-MID", "EV-01"]);
-
-  const first = finishCharging(store, "CP-01");
-  assert.equal(first.code, "charging_finished_next");
-  assert.equal(first.params.nextLabel, "PRIV-URGENT");
-  assert.equal(finishCharging(store, "CP-02").params.nextLabel, "PRIV-MID");
-  assert.equal(requestFor(store, "EV-01").status, "queued");
-  assert.ok(scheduledAt(store, METRO).length <= 2, "Metro never runs more sessions than points");
+  assert.equal(book(store, " ").code, "private_label_required");
+  assert.equal(book(store, "x".repeat(41)).code, "private_label_too_long");
+  assert.equal(createChargingSession(store, { studentId: STUDENT, hubId: METRO, slotStart: slotAt(1), vehicleLabel: "A", battery: "", now: T0 }).code, "invalid_battery");
+  assert.equal(book(store, "A", { offset: 1 }).ok, true);
+  assert.equal(book(store, "a", { offset: 2 }).code, "private_duplicate");
+  assert.equal(book(store, "B", { offset: 1 }).ok, true);
+  assert.equal(book(store, "C", { offset: 1 }).code, "slot_full", "two ports at the Metro Hub");
 });
 
-test("finishing a session: shared vehicle charged to 100%, private EV leaves its space", () => {
+test("advanceChargingClock: bookings start with their slot and end with it; the owner is notified (FR-PEV-5)", () => {
   const store = freshStore();
-  const seeded = finishCharging(store, "CP-03");
-  assert.equal(seeded.code, "charging_finished");
-  assert.equal(vehicle(store, "EV-04").battery, 100);
-  assert.equal(vehicle(store, "EV-04").status, "available");
-  assert.equal(requestFor(store, "EV-04").status, "completed");
-  assert.equal(point(store, "CP-03").status, "available");
-
-  const parked = privateEv(store);
-  finishCharging(store, parked.request.chargingPointId);
-  assert.equal(store.getState().parkingReservations[0].status, "completed");
-  assert.equal(finishCharging(store, "CP-03").code, "point_not_charging");
-  assert.equal(finishCharging(store, "CP-99").code, "point_not_found");
+  const booking = book(store, "59A-123.45", { offset: 1 }).request;
+  assert.deepEqual(advanceChargingClock(store, T0 + 10 * MINUTE).assigned, [], "nothing due yet");
+  const started = advanceChargingClock(store, slotAt(1));
+  assert.equal(started.assigned[0].requestId, booking.id);
+  assert.equal(request(store, booking.id).status, ChargingRequestStatus.CHARGING);
+  // The seeded session of EM-201 ended with the previous slot.
+  assert.equal(request(store, "CHG-001").status, ChargingRequestStatus.COMPLETED);
+  assert.equal(vehicle(store, "EM-201").battery, 100);
+  assert.equal(vehicle(store, "EM-201").status, VehicleStatus.AVAILABLE);
+  const ended = advanceChargingClock(store, slotAt(2));
+  assert.equal(ended.completed[0].requestId, booking.id);
+  assert.equal(point(store, request(store, booking.id).chargingPointId).status, ChargingPointStatus.AVAILABLE);
+  const notice = store.getState().notifications.at(-1);
+  assert.equal(notice.code, "notify_charging_complete");
+  assert.equal(notice.recipientId, STUDENT);
+  assert.equal(notice.params.label, "59A-123.45");
 });
 
-test("D-009: a waiting request whose vehicle was reserved is skipped until the hold ends", () => {
+test("ports go to the highest-priority waiting request when a slot is over capacity", () => {
   const store = freshStore();
-  shared(store, "EV-02");
-  privateEv(store);
-  shared(store, "EV-01");
-  reserveVehicle(store, { studentId: "B", vehicleId: "EV-01", now: T0 });
-  assert.deepEqual(buildChargingSchedule(store.getState(), METRO).blocked.map((item) => item.blockedReason), ["vehicle_reserved"]);
-
-  finishCharging(store, "CP-01");
-  assert.equal(point(store, "CP-01").status, "available", "the reserved vehicle does not take the freed point");
-  assert.equal(vehicle(store, "EV-01").status, "reserved");
-
-  expireReservations(store, T0 + RESERVATION_HOLD_DURATION_MS);
-  assert.equal(requestFor(store, "EV-01").chargingPointId, "CP-01", "allocated automatically once the hold expires");
-  assert.equal(vehicle(store, "EV-01").status, "charging");
+  // KTX Khu A: one port, busy with EM-201. Two shared vehicles wait in the current slot.
+  store.update((draft) => {
+    for (const id of ["EB-103", "EB-105"]) {
+      draft.chargingRequests.push({
+        id: `CHG-T${id}`, status: ChargingRequestStatus.QUEUED, source: "shared", studentId: null, hubId: DORM,
+        vehicleId: id, vehicleLabel: id, battery: id === "EB-103" ? 61 : 90, upcomingUsage: id === "EB-105",
+        chargingPointId: null, slotStart: new Date(slotAt(0)).toISOString(), slotEnd: new Date(slotAt(1)).toISOString(),
+        createdAt: new Date(T0).toISOString(),
+      });
+    }
+  });
+  const schedule = buildChargingSchedule(store.getState(), DORM, T0);
+  assert.deepEqual(schedule.waiting.map((item) => item.vehicleId), ["EB-105", "EB-103"], "upcoming usage first");
+  const result = finishCharging(store, "CP-03", T0);
+  assert.equal(result.code, "charging_finished_next");
+  assert.equal(result.params.nextLabel, "EB-105");
+  assert.equal(vehicle(store, "EB-105").status, VehicleStatus.CHARGING);
 });
 
-test("D-009: a waiting request whose vehicle failed consumes no capacity", () => {
+test("Manage Smart Charging: a shared vehicle gets the earliest free slot; busy or duplicate vehicles are refused", () => {
   const store = freshStore();
-  shared(store, "EV-02");
-  privateEv(store);
-  shared(store, "EV-01");
-  reportVehicleFailure(store, "EV-01");
-  finishCharging(store, "CP-01");
-  assert.equal(point(store, "CP-01").status, "available");
-  assert.deepEqual(buildChargingSchedule(store.getState(), METRO).blocked.map((item) => item.blockedReason), ["vehicle_failed"]);
+  assert.equal(scheduleSharedVehicleCharging(store, { vehicleId: "EB-102", now: T0 }).code, "charging_started");
+  assert.equal(scheduleSharedVehicleCharging(store, { vehicleId: "EB-102", now: T0 }).code, "charging_vehicle_charging");
+  assert.equal(scheduleSharedVehicleCharging(store, { vehicleId: "EB-103", now: T0 }).code, "charging_scheduled", "KTX Khu A is full now");
+  assert.equal(scheduleSharedVehicleCharging(store, { vehicleId: "EB-103", now: T0 }).code, "charging_duplicate");
+  reserveVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 });
+  assert.equal(scheduleSharedVehicleCharging(store, { vehicleId: "EB-101", now: T0 }).code, "charging_vehicle_busy");
+  assert.equal(scheduleSharedVehicleCharging(store, { hubId: DORM, vehicleId: "EM-203", now: T0 }).code, "charging_hub_mismatch");
+  assert.equal(requestFor(store, "EB-102").upcomingUsage, true, "D-008: taken from the vehicle record");
 });
 
-test("FR-14 + FR-15: a charger outage moves its session to another free point automatically", () => {
+test("D-009: a shared request whose vehicle is reserved stays on hold and does not take a port", () => {
   const store = freshStore();
-  shared(store, "EV-02");
-  assert.equal(requestFor(store, "EV-02").chargingPointId, "CP-01");
-  reportChargingPointUnavailable(store, "CP-01");
-  assert.equal(requestFor(store, "EV-02").chargingPointId, "CP-02");
-  assert.equal(vehicle(store, "EV-02").status, "charging");
+  scheduleSharedVehicleCharging(store, { vehicleId: "EB-103", now: T0 }); // booked for the next slot at KTX Khu A
+  reserveVehicle(store, { studentId: STUDENT, vehicleId: "EB-103", now: T0 });
+  advanceChargingClock(store, slotAt(1));
+  const schedule = buildChargingSchedule(store.getState(), DORM, slotAt(1));
+  assert.equal(schedule.blocked[0]?.vehicleId, "EB-103");
+  assert.equal(schedule.blocked[0].blockedReason, "vehicle_reserved");
+  assert.equal(point(store, "CP-03").status, ChargingPointStatus.AVAILABLE);
 });
 
-test("AT-09 / FR-09: a private EV holds a space and charges when a point is free", () => {
+test("cancel and reschedule: the student cancels an own booking; the operator moves a booking later", () => {
   const store = freshStore();
-  const result = privateEv(store);
-  assert.equal(result.code, "private_started");
-  assert.equal(result.parkingReservation.status, "active");
-  assert.equal(result.parkingReservation.linkedChargingRequest, result.request.id);
-  assert.equal(result.request.source, "private");
-  assert.equal(result.request.battery, 35);
-
-  privateEv(store, { vehicleLabel: "PRIV-B" });
-  assert.equal(privateEv(store, { vehicleLabel: "PRIV-C" }).code, "private_queued");
+  const mine = book(store, "59A-1", { offset: 2 }).request;
+  assert.equal(cancelChargingRequest(store, { requestId: mine.id, studentId: OTHER, now: T0 }).code, "request_not_found");
+  assert.equal(cancelChargingRequest(store, { requestId: mine.id, studentId: STUDENT, now: T0 }).code, "charging_cancelled");
+  const charging = book(store, "59A-2").request;
+  assert.equal(cancelChargingRequest(store, { requestId: charging.id, now: T0 }).code, "charging_cancel_not_allowed");
+  const later = book(store, "59A-3", { offset: 1 }).request;
+  const moved = rescheduleChargingRequest(store, { requestId: later.id, now: T0 });
+  assert.equal(moved.code, "charging_rescheduled");
+  assert.equal(Date.parse(request(store, later.id).slotStart), slotAt(2));
 });
 
-test("FR-09 input validation: battery 0..100 and a short, non-empty label", () => {
+test("optimizeQueue: after a port failure, the lowest-priority booking of an over-capacity slot moves later", () => {
   const store = freshStore();
-  for (const battery of ["", null, undefined, -1, 101, 150, "abc"]) {
-    assert.equal(privateEv(store, { battery }).code, "invalid_battery", `battery=${battery}`);
-  }
-  assert.equal(privateEv(store, { vehicleLabel: "   " }).code, "private_label_required");
-  assert.equal(privateEv(store, { vehicleLabel: "x".repeat(41) }).code, "private_label_too_long");
-  assert.equal(privateEv(store, { battery: 0 }).ok, true);
-  assert.equal(privateEv(store, { battery: "100" }).ok, true);
-  assert.equal(store.getState().parkingReservations.length, 2, "rejected requests hold no parking");
-});
-
-test("FR-09: a private EV is rejected when the Hub has no free parking", () => {
-  const store = freshStore();
-  for (let i = 0; i < 3; i += 1) reserveParking(store, { studentId: "B", hubId: SERVICE });
-  assert.equal(privateEv(store, { hubId: SERVICE }).code, "private_parking_full");
-  assert.equal(store.getState().chargingRequests.length, 1, "only the seeded session exists");
-});
-
-test("a student can cancel a waiting request; a private EV also releases its space", () => {
-  const store = freshStore();
-  shared(store, "EV-02");
-  privateEv(store);
-  const waiting = privateEv(store, { vehicleLabel: "PRIV-WAIT" });
-  const charging = requestFor(store, "EV-02");
-
-  assert.equal(cancelChargingRequest(store, { studentId: "B", requestId: waiting.request.id }).code, "request_not_found");
-  assert.equal(cancelChargingRequest(store, { studentId: "A", requestId: charging.id }).code, "charging_cancel_not_allowed");
-  assert.equal(cancelChargingRequest(store, { studentId: "A", requestId: waiting.request.id }).code, "charging_cancelled");
-  assert.equal(requestFor(store, "PRIV-WAIT").status, "cancelled");
-  assert.equal(store.getState().parkingReservations.find((item) => item.id === waiting.parkingReservation.id).status, "cancelled");
+  const urgent = book(store, "URGENT", { offset: 2, battery: 10 }).request;
+  const normal = book(store, "NORMAL", { offset: 2, battery: 70 }).request;
+  store.update((draft) => { draft.chargingPoints.find((item) => item.id === "CP-02").status = ChargingPointStatus.UNAVAILABLE; });
+  const slot = buildChargingSchedule(store.getState(), METRO, T0).upcoming.find((item) => Date.parse(item.slotStart) === slotAt(2));
+  assert.deepEqual(slot.bookings.map((item) => [item.vehicleLabel, item.overbooked]), [["URGENT", false], ["NORMAL", true]]);
+  const result = optimizeQueue(store, METRO, T0);
+  assert.equal(result.code, "queue_optimized");
+  assert.equal(Date.parse(request(store, urgent.id).slotStart), slotAt(2));
+  assert.equal(Date.parse(request(store, normal.id).slotStart), slotAt(3));
+  assert.equal(optimizeQueue(store, METRO, T0).code, "queue_optimal");
 });

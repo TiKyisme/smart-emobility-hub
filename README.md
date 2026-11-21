@@ -26,17 +26,24 @@ Presenter material (Vietnamese): [start here](docs/demo/START_HERE.md) · [8–1
 
 ## What the MVP demonstrates
 
-| Page | Requirements | What can be done |
-|---|---|---|
-| Student · Find & reserve | FR-01..FR-04, FR-06, FR-07 | Hub overview, vehicle search by Hub/battery/free charger/free parking, hold with live countdown, cancel, pick up, return to a Hub with capacity |
-| Student · Parking & charging | FR-05, FR-08, FR-09 | Hold/release parking spaces; charging requests for shared vehicles and private EVs; a free charger is assigned immediately by priority |
-| Operator · Network monitor | FR-10..FR-13 | KPIs, Hubs ranked by parking utilization, redistribution suggestion and coordination, fleet status |
-| Operator · Smart charging | FR-15 | Chargers and sessions, priority queue (needed soon first, then lowest battery), finish a session to hand the charger to the next request |
-| Operator · Incidents | FR-14 | Report vehicle failures and charger outages, then mark repaired / restore to put them back in service |
-| Operator · What-if simulation | FR-16..FR-18 | Five assignment scenarios on a copy of the live state with before/after impact and recommendations |
-| Top bar | FR-19, FR-20 | Manual and 15-second automatic simulated updates; Light/Dark and VI/EN |
+Every page is a use case of the whole-system diagram in the reports, grouped by actor; in English the page names are the use-case names. Use case ↔ web ↔ report mapping: [docs/UC_UI_PDF_SYNC.md](docs/UC_UI_PDF_SYNC.md) (Vietnamese).
 
-Out of scope by design: login/accounts, payment, real GPS/IoT, 3D maps, cloud services and a mandatory database. Known limitations are listed in the [lecturer FAQ](docs/demo/FAQ_FOR_LECTURER.md#10-hạn-chế-và-đánh-đổi-đã-biết).
+| Actor | Page (use case) | Requirements | What can be done |
+|---|---|---|---|
+| Shared Vehicle User | Find Suitable Hub / Vehicle (UC-02) | FR-01..FR-03 | Hubs within a radius of a chosen location (nearest first), parking near the destination, vehicle type and battery filters |
+| Shared Vehicle User | Reserve Shared Vehicle (UC-04, UC-06, UC-07) | FR-04, FR-06, FR-07 | Confirmation step, confirmed reservation with ID/expiry/countdown, expiry, cancel, pick up, return, reservation history; E2/E3 demonstrations |
+| Student | Reserve Parking Space (UC-05) | FR-05 | Hold/release parking spaces within capacity |
+| Private EV Owner | Schedule Private EV Charging (UC-08, UC-09) | FR-08, FR-09 | Hub + date + one-hour slot, availability check, review and confirm, other slots/Hubs when full, session status and completion notice |
+| Operator | Monitor Network Status (UC-11..UC-13) | FR-10..FR-12 | KPIs, configurable overload/shortage alerts, Hubs by utilization, fleet |
+| Operator | Manage Smart Charging (UC-16) | FR-15 | Ports, schedule per slot, priority (early departure or battery < 20 %), add shared vehicles, move/cancel, finish, optimize |
+| Operator | Redistribute Vehicles (UC-14) | FR-13 | Plan from alerts, redistribution tasks for the dispatch staff, tracking |
+| Vehicle Dispatch Staff | Execute Redistribution Task | FR-13 | Start and complete assigned tasks |
+| Operator | Handle Operational Incident (UC-15) | FR-14 | Record, confirm and classify, confirm unavailable, assign to maintenance or restore operationally, status counts |
+| Maintenance Staff | Resolve Assigned Incident | FR-14 | Start and complete assigned repairs, resource back in service |
+| Operator | Run What-if Simulation (UC-17, UC-18) | FR-16..FR-18 | Five templates with target Hub, demand increase, offline ports and horizon; impact cards; typed recommendations; save and apply |
+| Data Simulator, all | top bar (UC-20, UC-10/19) | FR-19, FR-20 | Manual and 15-second automatic simulated updates; Light/Dark and VI/EN |
+
+Out of scope by design: login/accounts, payment, real GPS/IoT, 3D maps, cloud services and a mandatory database. Known limitations are listed in the [lecturer FAQ](docs/demo/FAQ_FOR_LECTURER.md#13-hạn-chế-và-đánh-đổi-đã-biết).
 
 ## Tests
 
@@ -52,9 +59,9 @@ Latest recorded results: [docs/demo/DEMO_EVIDENCE.md](docs/demo/DEMO_EVIDENCE.md
 ```text
 index.html                 application shell, page sections and static controls
 src/main.js                event wiring and routing (controller)
-src/ui/                    shell rendering, student/operator views, VI/EN text
+src/ui/                    shell rendering, one view module per actor area, VI/EN text
 src/services/              business rules: hub, reservation, charging, operator, what-if, simulator
-src/domain/, src/state/    statuses, result objects, ids, in-memory store
+src/domain/, src/state/    statuses, actors, time slots, distances, entity rules, in-memory store
 src/data/                  simulated seed data
 tests/unit/                automated checks (npm test)
 tests/e2e/                 optional browser acceptance script
@@ -66,6 +73,6 @@ submission2/, submission3/ published reports and UC-04 diagrams
 ## Project documents
 
 - [Project specification](docs/PROJECT_SPEC.md) · [Requirements FR/NFR](docs/REQUIREMENTS.md) · [Use-case catalog](docs/USE_CASE_CATALOG.md) · [UC-04 detail](docs/UC-04_RESERVE_SHARED_VEHICLE.md)
-- [Architecture](docs/ARCHITECTURE.md) · [Design decisions](docs/DECISIONS.md) · [Traceability](docs/TRACEABILITY.md) · [Implementation plan](docs/IMPLEMENTATION_PLAN.md)
+- [Use case ↔ web ↔ report synchronization](docs/UC_UI_PDF_SYNC.md) · [Architecture](docs/ARCHITECTURE.md) · [Design decisions](docs/DECISIONS.md) · [Traceability](docs/TRACEABILITY.md) · [Implementation plan](docs/IMPLEMENTATION_PLAN.md)
 - [Source grounding](docs/SOURCE_GROUNDING.md) · [Generative AI usage declaration](docs/AI_USAGE_DECLARATION.md) · [Submission #1 checklist](docs/SUBMISSION_1_CHECKLIST.md) and [template](docs/SUBMISSION_1_REPORT_TEMPLATE.md)
 - [Release manifest](docs/RELEASE_MANIFEST.md) (which files are published, kept local or ignored) · [Release summary](docs/RELEASE_SUMMARY.md)

@@ -1,151 +1,201 @@
-// FR-01..FR-03, FR-10..FR-14 / AT-01..AT-03, AT-10..AT-14, D-016
+// Monitor Network Status, Redistribute Vehicles / Execute Redistribution Task and
+// Handle Operational Incident / Resolve Assigned Incident (FR-10..FR-14; FR-OPT, FR-DIS, FR-MNT).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createInitialState } from "../../src/data/simulatedData.js";
-import { schedulePrivateEvCharging, submitChargingRequest } from "../../src/services/chargingService.js";
-import { findSuitableHubs, findSuitableVehicles, listHubSummaries } from "../../src/services/hubService.js";
 import {
-  coordinateRedistribution,
-  getCapacityRisks,
+  ChargingPointStatus,
+  ChargingRequestStatus,
+  DispatchOrderStatus,
+  IncidentStatus,
+  MaintenanceTaskStatus,
+  ReservationStatus,
+  VehicleStatus,
+} from "../../src/domain/status.js";
+import { createChargingSession } from "../../src/services/chargingService.js";
+import { getAvailableSlotsCount } from "../../src/services/hubService.js";
+import {
+  applyCoordination,
+  applyOperationalAction,
+  assignMaintenance,
+  cancelRedistributionOrder,
+  classifyIncident,
+  completeMaintenanceTask,
+  completeRedistributionTask,
+  createRedistributionOrder,
+  detectCapacityRisks,
+  getBatteryLevel,
   getNetworkMetrics,
-  reportChargingPointUnavailable,
-  reportVehicleFailure,
-  resolveIncident,
-  suggestRedistribution,
+  identifyBottlenecks,
+  isOperational,
+  markResourceUnavailable,
+  planRedistribution,
+  recordIncident,
+  startMaintenanceTask,
+  startRedistributionTask,
+  updateAlertThresholds,
 } from "../../src/services/operatorService.js";
-import { cancelParkingReservation, pickUpVehicle, reserveParking, reserveVehicle } from "../../src/services/reservationService.js";
-import { CAMPUS, DORM, freshStore, hub, METRO, point, requestFor, T0, vehicle } from "./helpers.js";
+import { pickUpVehicle, reserveVehicle } from "../../src/services/reservationService.js";
+import { freshStore, hub, incident, LIB, METRO, MINUTE, NVH, point, slotAt, STUDENT, T0, UEL, vehicle } from "./helpers.js";
 
-test("AT-01..AT-03: Hub summaries and search use current availability and battery", () => {
-  const state = createInitialState();
-  assert.equal(listHubSummaries(state).length, 4);
-  assert.deepEqual(findSuitableVehicles(state, { hubId: METRO, minimumBattery: 80 }).map((item) => item.id), ["EV-01"]);
-  assert.deepEqual(findSuitableVehicles(state, { minimumBattery: 70 }).map((item) => item.id), ["EV-01", "EV-05"]);
-  assert.deepEqual(findSuitableVehicles(state, { hubId: DORM, includeUnavailable: true }).map((item) => item.id), ["EV-03", "EV-04"]);
-  assert.deepEqual(findSuitableHubs(state, { minimumParking: 5, chargingRequired: true }).map((item) => item.id), [CAMPUS]);
+test("detectCapacityRisks / identifyBottlenecks: utilization ranking with configured overload and shortage alerts", () => {
+  const state = freshStore().getState();
+  const risks = detectCapacityRisks(state);
+  assert.equal(risks[0].id, UEL);
+  assert.equal(risks[0].overloaded, true);
+  for (let index = 1; index < risks.length; index += 1) assert.ok(risks[index - 1].utilization >= risks[index].utilization);
+  assert.deepEqual(identifyBottlenecks(state).map((alert) => [alert.type, alert.hubId]), [["overload", UEL], ["shortage", NVH]]);
 });
 
-test("AT-10 / AT-11: network metrics reflect the seeded network", () => {
-  assert.deepEqual(getNetworkMetrics(createInitialState()), {
-    hubs: 4,
-    vehicles: 6,
-    availableVehicles: 5,
-    chargingPoints: 5,
-    availableChargingPoints: 4,
-    openIncidents: 0,
-    queuedChargingRequests: 0,
-  });
-});
-
-test("AT-12: a Hub filled by physical + held spaces becomes the top risk and is flagged at capacity", () => {
+test("FR-OPT-4..6: thresholds are configurable and validated", () => {
   const store = freshStore();
-  for (let i = 0; i < 3; i += 1) reserveParking(store, { studentId: "A", hubId: DORM });
-  const [top] = getCapacityRisks(store.getState());
-  assert.equal(top.id, DORM);
-  assert.equal(top.utilization, 1);
-  assert.equal(top.atCapacity, true);
+  assert.equal(updateAlertThresholds(store, { overloadPercent: 40, shortageVehicles: 1 }).code, "thresholds_invalid");
+  assert.equal(updateAlertThresholds(store, { overloadPercent: 90, shortageVehicles: 0 }).code, "thresholds_updated");
+  assert.deepEqual(identifyBottlenecks(store.getState()), []);
+  assert.equal(updateAlertThresholds(store, { overloadPercent: 70, shortageVehicles: 2 }).ok, true);
+  const alerts = identifyBottlenecks(store.getState());
+  assert.ok(alerts.some((alert) => alert.type === "overload" && alert.hubId === "KTX-A"), "70 % now counts");
+  assert.ok(alerts.filter((alert) => alert.type === "shortage").length >= 3);
 });
 
-test("AT-13: the seed recommendation moves one vehicle from Dormitory to University and respects capacity", () => {
-  const store = freshStore();
-  const recommendation = suggestRedistribution(store.getState());
-  assert.equal(recommendation.fromHubId, DORM);
-  assert.equal(recommendation.toHubId, CAMPUS);
-
-  const result = coordinateRedistribution(store, recommendation);
-  assert.equal(result.code, "redistribution_done");
-  assert.equal(vehicle(store, "EV-03").hubId, CAMPUS);
-  assert.equal(hub(store, DORM).occupiedParking, 6);
-  assert.equal(hub(store, CAMPUS).occupiedParking, 6);
+test("network metrics, battery level and operational state", () => {
+  const state = freshStore().getState();
+  const metrics = getNetworkMetrics(state);
+  assert.equal(metrics.hubs, 12);
+  assert.equal(metrics.vehicles, 23);
+  assert.equal(metrics.availableVehicles, 22);
+  assert.equal(metrics.chargingPoints, 14);
+  assert.equal(metrics.availableChargingPoints, 13);
+  assert.equal(metrics.alerts, 2);
+  assert.equal(getBatteryLevel(state.vehicles[0]), 82);
+  assert.equal(isOperational(state.vehicles[0]), true);
+  assert.equal(isOperational({ ...state.chargingPoints[0], status: ChargingPointStatus.UNAVAILABLE }), false);
 });
 
-test("AT-13: coordination is refused when the destination is full, no vehicle can move, or no recommendation exists", () => {
-  const store = freshStore();
-  for (let i = 0; i < 3; i += 1) reserveParking(store, { studentId: "A", hubId: DORM });
-  assert.equal(coordinateRedistribution(store, { fromHubId: METRO, toHubId: DORM }).code, "redistribution_destination_full");
-  assert.equal(coordinateRedistribution(store, null).code, "redistribution_none");
-
-  const waiting = freshStore();
-  submitChargingRequest(waiting, { studentId: "A", hubId: METRO, vehicleId: "EV-02" });
-  schedulePrivateEvCharging(waiting, { studentId: "A", hubId: METRO, vehicleLabel: "P", battery: 40 });
-  submitChargingRequest(waiting, { studentId: "A", hubId: METRO, vehicleId: "EV-01" });
-  assert.equal(coordinateRedistribution(waiting, { fromHubId: METRO, toHubId: CAMPUS }).code, "redistribution_no_vehicle",
-    "a vehicle waiting for a charger is not moved away");
+test("planRedistribution: the shortage Hub receives a vehicle from the overloaded Hub", () => {
+  const plan = planRedistribution(freshStore().getState());
+  assert.equal(plan.code, "plan_shortage");
+  assert.equal(plan.fromHubId, UEL);
+  assert.equal(plan.toHubId, NVH);
+  assert.equal(plan.count, 1);
 });
 
-test("AT-14: vehicle failure cancels holds, frees its charger and opens a readable incident", () => {
+test("Execute Redistribution Task: assigned → in progress → completed updates the vehicle and both Hubs", () => {
   const store = freshStore();
-  reserveVehicle(store, { studentId: "A", vehicleId: "EV-01", now: T0 });
-  submitChargingRequest(store, { studentId: "A", hubId: METRO, vehicleId: "EV-02" });
-  assert.equal(point(store, "CP-01").status, "occupied");
-
-  assert.equal(reportVehicleFailure(store, "EV-01").params.incidentId, "INC-001");
-  assert.equal(store.getState().reservations[0].status, "cancelled");
-  assert.equal(vehicle(store, "EV-01").status, "failed");
-
-  assert.equal(reportVehicleFailure(store, "EV-02").code, "vehicle_failure_reported");
-  assert.equal(point(store, "CP-01").status, "available");
-  assert.equal(requestFor(store, "EV-02").status, "queued");
-  assert.equal(reportVehicleFailure(store, "EV-02").code, "vehicle_already_failed");
-  assert.equal(getNetworkMetrics(store.getState()).openIncidents, 2);
+  const created = createRedistributionOrder(store, { vehicleId: "EM-208", toHubId: NVH, now: T0 });
+  assert.equal(created.code, "dispatch_created");
+  const { order } = created;
+  assert.equal(order.status, DispatchOrderStatus.ASSIGNED);
+  assert.equal(vehicle(store, "EM-208").status, VehicleStatus.IN_TRANSIT);
+  assert.equal(getAvailableSlotsCount(store.getState(), NVH), 3, "one space held at the destination");
+  assert.equal(reserveVehicle(store, { studentId: STUDENT, vehicleId: "EM-208", now: T0 }).code, "vehicle_not_available");
+  assert.equal(completeRedistributionTask(store, { orderId: order.id }).code, "dispatch_not_started");
+  assert.equal(startRedistributionTask(store, { orderId: order.id, now: T0 + MINUTE }).code, "dispatch_started");
+  assert.equal(hub(store, UEL).occupiedParking, 6);
+  assert.equal(completeRedistributionTask(store, { orderId: order.id, now: T0 + 10 * MINUTE }).code, "dispatch_completed");
+  assert.equal(vehicle(store, "EM-208").hubId, NVH);
+  assert.equal(vehicle(store, "EM-208").status, VehicleStatus.AVAILABLE);
+  assert.equal(hub(store, NVH).occupiedParking, 3);
+  assert.equal(getAvailableSlotsCount(store.getState(), NVH), 3, "the hold was released");
+  assert.equal(store.getState().dispatchOrders[0].status, DispatchOrderStatus.COMPLETED);
+  assert.ok(!identifyBottlenecks(store.getState()).length, "both alerts cleared");
 });
 
-test("AT-14: a charger outage opens an incident; repeated or unknown reports are rejected", () => {
+test("redistribution orders: invalid requests are refused; an assigned order can be cancelled", () => {
   const store = freshStore();
-  assert.equal(reportChargingPointUnavailable(store, "CP-04").code, "point_unavailable_reported");
-  assert.equal(point(store, "CP-04").status, "unavailable");
-  assert.equal(reportChargingPointUnavailable(store, "CP-04").code, "point_already_unavailable");
-  assert.equal(reportChargingPointUnavailable(store, "CP-99").code, "point_not_found");
-  assert.deepEqual(store.getState().incidents.map((item) => [item.id, item.type, item.resourceId, item.status]), [
-    ["INC-001", "charging_point_unavailable", "CP-04", "open"],
-  ]);
+  assert.equal(createRedistributionOrder(store, { vehicleId: "EB-101", toHubId: METRO }).code, "dispatch_same_hub");
+  assert.equal(createRedistributionOrder(store, { vehicleId: "EM-201", toHubId: NVH }).code, "dispatch_vehicle_unavailable");
+  store.update((draft) => { draft.hubs.find((item) => item.id === NVH).occupiedParking = 6; });
+  assert.equal(createRedistributionOrder(store, { vehicleId: "EB-101", toHubId: NVH }).code, "dispatch_destination_full");
+  const { order } = createRedistributionOrder(store, { vehicleId: "EB-101", toHubId: LIB, now: T0 });
+  assert.equal(cancelRedistributionOrder(store, { orderId: order.id }).code, "dispatch_cancelled");
+  assert.equal(vehicle(store, "EB-101").status, VehicleStatus.AVAILABLE);
+  assert.equal(store.getState().parkingReservations[0].status, ReservationStatus.CANCELLED);
+  assert.equal(cancelRedistributionOrder(store, { orderId: order.id }).code, "dispatch_cancel_not_allowed");
 });
 
-test("D-016: resolving a vehicle failure returns the vehicle to service and resumes its charging request", () => {
+test("applyCoordination: a redistribution plan becomes tasks for the Vehicle Dispatch Staff", () => {
   const store = freshStore();
-  submitChargingRequest(store, { studentId: "A", hubId: METRO, vehicleId: "EV-02" });
-  reportVehicleFailure(store, "EV-02");
-  assert.equal(requestFor(store, "EV-02").status, "queued");
-
-  const repaired = resolveIncident(store, "INC-001");
-  assert.equal(repaired.code, "vehicle_repaired");
-  assert.equal(store.getState().incidents[0].status, "resolved");
-  assert.ok(store.getState().incidents[0].resolvedAt);
-  assert.equal(vehicle(store, "EV-02").status, "charging", "the repaired vehicle gets the free charger back");
-  assert.equal(requestFor(store, "EV-02").chargingPointId, "CP-01");
-  assert.equal(resolveIncident(store, "INC-001").code, "incident_already_resolved");
-  assert.equal(resolveIncident(store, "INC-404").code, "incident_not_found");
+  const result = applyCoordination(store, [planRedistribution(store.getState())], T0);
+  assert.equal(result.code, "coordination_applied");
+  assert.equal(result.params.orders, 1);
+  assert.equal(store.getState().dispatchOrders[0].toHubId, NVH);
+  assert.equal(applyCoordination(store, [{ kind: "user_redirect" }], T0).code, "coordination_nothing");
 });
 
-test("D-016: restoring a charger hands it to the highest-priority waiting request", () => {
+test("UC-15 repair branch: record → classify → assign (resource unavailable) → start → complete (resolved, restored)", () => {
   const store = freshStore();
-  reportChargingPointUnavailable(store, "CP-01");
-  reportChargingPointUnavailable(store, "CP-02");
-  submitChargingRequest(store, { studentId: "A", hubId: METRO, vehicleId: "EV-01" });
-  submitChargingRequest(store, { studentId: "A", hubId: METRO, vehicleId: "EV-02" });
-
-  const restored = resolveIncident(store, "INC-002");
-  assert.equal(restored.code, "point_restored_next");
-  assert.equal(restored.params.nextLabel, "EV-02", "EV-02 (28%, needed soon) outranks EV-01 (82%)");
-  assert.equal(point(store, "CP-02").status, "occupied");
-  assert.equal(point(store, "CP-01").status, "unavailable");
-  assert.equal(getNetworkMetrics(store.getState()).openIncidents, 1);
+  reserveVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 });
+  const recorded = recordIncident(store, { resourceType: "vehicle", resourceId: "EB-101", now: T0 });
+  assert.equal(recorded.code, "incident_recorded");
+  const id = recorded.incident.id;
+  assert.equal(incident(store, id).status, IncidentStatus.NEW);
+  assert.equal(vehicle(store, "EB-101").status, VehicleStatus.RESERVED, "recording alone does not change the resource");
+  assert.equal(recordIncident(store, { resourceType: "vehicle", resourceId: "EB-101" }).code, "incident_duplicate");
+  assert.equal(assignMaintenance(store, { incidentId: id }).code, "incident_not_classified");
+  assert.equal(classifyIncident(store, { incidentId: id, type: "charging_point_power", severity: "high" }).code, "incident_classification_invalid");
+  assert.equal(classifyIncident(store, { incidentId: id, type: "vehicle_failure", severity: "high", now: T0 }).code, "incident_classified");
+  const assigned = assignMaintenance(store, { incidentId: id, now: T0 });
+  assert.equal(assigned.code, "maintenance_assigned");
+  assert.equal(vehicle(store, "EB-101").status, VehicleStatus.FAILED);
+  assert.equal(store.getState().reservations[0].status, ReservationStatus.CANCELLED, "the student's hold is cancelled");
+  assert.equal(incident(store, id).status, IncidentStatus.ASSIGNED);
+  const taskId = assigned.task.id;
+  assert.equal(completeMaintenanceTask(store, { taskId }).code, "task_not_started");
+  assert.equal(startMaintenanceTask(store, { taskId, now: T0 + MINUTE }).code, "maintenance_started");
+  assert.equal(incident(store, id).status, IncidentStatus.IN_PROGRESS);
+  assert.equal(completeMaintenanceTask(store, { taskId, now: T0 + 5 * MINUTE }).code, "vehicle_repaired");
+  assert.equal(incident(store, id).status, IncidentStatus.RESOLVED);
+  assert.equal(incident(store, id).resolution, "repair");
+  assert.equal(vehicle(store, "EB-101").status, VehicleStatus.AVAILABLE);
+  assert.equal(store.getState().maintenanceTasks[0].status, MaintenanceTaskStatus.COMPLETED);
 });
 
-test("D-016: a vehicle that failed during a trip needs a free space at its Hub to be repaired", () => {
+test("UC-15 operational branch: classify → restore without repair resolves the incident", () => {
   const store = freshStore();
-  reserveVehicle(store, { studentId: "A", vehicleId: "EV-01", now: Date.now() });
-  pickUpVehicle(store, { studentId: "A", vehicleId: "EV-01" });
-  reportVehicleFailure(store, "EV-01");
-  assert.equal(store.getState().incidents[0].wasInUse, true);
+  const { incident: recorded } = recordIncident(store, { resourceType: "charging_point", resourceId: "CP-02", now: T0 });
+  assert.equal(markResourceUnavailable(store, { incidentId: recorded.id, now: T0 }).code, "resource_marked_unavailable");
+  assert.equal(point(store, "CP-02").status, ChargingPointStatus.UNAVAILABLE);
+  assert.equal(markResourceUnavailable(store, { incidentId: recorded.id }).code, "resource_already_unavailable");
+  classifyIncident(store, { incidentId: recorded.id, type: "charging_point_power", severity: "medium" });
+  const result = applyOperationalAction(store, { incidentId: recorded.id, now: T0 + MINUTE });
+  assert.equal(result.code, "point_restored");
+  assert.equal(point(store, "CP-02").status, ChargingPointStatus.AVAILABLE);
+  assert.equal(incident(store, recorded.id).resolution, "operational");
+  assert.equal(applyOperationalAction(store, { incidentId: recorded.id }).code, "incident_not_new");
+});
 
-  const holds = [];
-  for (let i = 0; i < 5; i += 1) holds.push(reserveParking(store, { studentId: "P", hubId: METRO }).reservation.id); // 3/8 + 5 held = full
-  assert.equal(resolveIncident(store, "INC-001").code, "repair_hub_full");
-  assert.equal(vehicle(store, "EV-01").status, "failed");
+test("a port taken out of service: its session moves to another free port; restoring hands it the next request", () => {
+  const store = freshStore();
+  const first = createChargingSession(store, { studentId: STUDENT, hubId: METRO, slotStart: slotAt(0), vehicleLabel: "59A-1", battery: 40, now: T0 }).request;
+  const portOfFirst = first.chargingPointId;
+  const otherPort = portOfFirst === "CP-01" ? "CP-02" : "CP-01";
+  const { incident: recorded } = recordIncident(store, { resourceType: "charging_point", resourceId: portOfFirst, now: T0 });
+  classifyIncident(store, { incidentId: recorded.id, type: "charging_point_unavailable", severity: "high" });
+  assignMaintenance(store, { incidentId: recorded.id, now: T0 });
+  const moved = store.getState().chargingRequests.find((item) => item.id === first.id);
+  assert.equal(moved.status, ChargingRequestStatus.CHARGING);
+  assert.equal(moved.chargingPointId, otherPort);
+  // A second session in the same slot has to wait: the Hub has one working port left.
+  const second = createChargingSession(store, { studentId: "STUDENT-C", hubId: METRO, slotStart: slotAt(1), vehicleLabel: "59A-2", battery: 30, now: T0 });
+  assert.equal(second.code, "session_scheduled");
+  const taskId = store.getState().maintenanceTasks[0].id;
+  startMaintenanceTask(store, { taskId, now: T0 });
+  assert.equal(completeMaintenanceTask(store, { taskId, now: T0 }).code, "point_restored");
+  assert.equal(point(store, portOfFirst).status, ChargingPointStatus.AVAILABLE);
+});
 
-  cancelParkingReservation(store, { studentId: "P", reservationId: holds[0] });
-  assert.equal(resolveIncident(store, "INC-001").code, "vehicle_repaired");
-  assert.equal(hub(store, METRO).occupiedParking, 4, "the repaired vehicle is parked at its Hub again");
-  assert.equal(vehicle(store, "EV-01").status, "available");
+test("a vehicle that failed during a trip needs a free space at its Hub before it is restored", () => {
+  const store = freshStore();
+  reserveVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 });
+  pickUpVehicle(store, { studentId: STUDENT, vehicleId: "EB-101", now: T0 + MINUTE });
+  const { incident: recorded } = recordIncident(store, { resourceType: "vehicle", resourceId: "EB-101", now: T0 });
+  classifyIncident(store, { incidentId: recorded.id, type: "vehicle_failure", severity: "high" });
+  const { task } = assignMaintenance(store, { incidentId: recorded.id, now: T0 });
+  startMaintenanceTask(store, { taskId: task.id, now: T0 });
+  store.update((draft) => { draft.hubs.find((item) => item.id === METRO).occupiedParking = 8; });
+  assert.equal(completeMaintenanceTask(store, { taskId: task.id, now: T0 }).code, "repair_hub_full");
+  assert.equal(store.getState().maintenanceTasks[0].status, MaintenanceTaskStatus.IN_PROGRESS);
+  store.update((draft) => { draft.hubs.find((item) => item.id === METRO).occupiedParking = 3; });
+  assert.equal(completeMaintenanceTask(store, { taskId: task.id, now: T0 }).code, "vehicle_repaired");
+  assert.equal(hub(store, METRO).occupiedParking, 4, "the repaired vehicle is parked again");
 });
