@@ -1,6 +1,6 @@
 # Release manifest
 
-Inventory updated 2026-11-20 (ICT). The GitHub repository is **public**, so every published file is visible to anyone.
+Inventory updated 2026-11-21 (ICT). The GitHub repository is **public**, so every published file is visible to anyone.
 
 ## Decision legend
 
@@ -15,13 +15,13 @@ Inventory updated 2026-11-20 (ICT). The GitHub repository is **public**, so ever
 
 | Path | Content |
 |---|---|
-| `index.html` + `src/**` (1 + 18 files) | Static app: shell and pages, ES modules (`main.js`, `ui/`, `services/`, `domain/`, `state/`, `data/`), `styles.css`. |
+| `index.html` + `src/**` (1 + 27 files) | Static app: shell with eleven use-case pages, ES modules (`main.js`, `ui/`, `ui/views/`, `services/`, `domain/`, `state/`, `data/`), `styles.css`. |
 | `package.json` | Scripts only (`npm start`, `npm test`); **no dependencies**. |
-| `tests/unit/` (7 `*.test.js` files + `helpers.js`) | 60 automated checks, Node built-in runner. |
-| `tests/e2e/browser_acceptance.py` | Optional Playwright browser run (101 checks incl. demo-script replay). |
-| `tests/ACCEPTANCE_TESTS.md` | Manual AT-01..AT-20. |
-| `docs/*.md` | Specification, requirements, architecture, decisions (D-001..D-018), traceability, plans, AI usage declaration. |
-| `docs/demo/*.md`, `docs/demo/screenshots/*.png` (8 images) | Demo package and browser evidence of the current interface. |
+| `tests/unit/` (8 `*.test.js` files + `helpers.js`) | 73 automated checks, Node built-in runner (incl. TC-UC04-01..11 of the Submission #3 appendix). |
+| `tests/e2e/browser_acceptance.py` | Optional Playwright browser run (130 checks incl. demo-script replay). |
+| `tests/ACCEPTANCE_TESTS.md` | Manual AT-01..AT-22. |
+| `docs/*.md` | Specification, requirements, architecture, decisions (D-001..D-026, ADR-01..06 mapping), traceability, use case ↔ web ↔ report synchronization (`UC_UI_PDF_SYNC.md`), plans, AI usage declaration. |
+| `docs/demo/*.md`, `docs/demo/screenshots/*.png` (11 images) | Demo package and browser evidence of the current interface. |
 | `docs/RELEASE_MANIFEST.md`, `docs/RELEASE_SUMMARY.md` | This manifest and the hand-over summary. |
 | `README.md`, `.gitignore` | Navigation and ignore rules. |
 | `submission2/UC04_Activity.{puml,png}`, `submission2/UC04_Sequence.{puml,png}` | UC-04 activity/sequence diagrams (editable PlantUML + export). |
@@ -54,7 +54,7 @@ Inventory updated 2026-11-20 (ICT). The GitHub repository is **public**, so ever
 | `report_builder/L03_13.tex`, `methods.tex`, `consolidate_submission3.py`, `README_BUILD_REPORT.md`, `report_builder/assets/` | KEEP-LOCAL | Report source and build inputs. |
 | `Development_Implementation_View.*`, `Implement View.png`, `Implement_View_extracted.xml`, `build_new_development_view.py`, `Deployment*`, `UC15_Implementation.drawio` | KEEP-LOCAL | Architecture view sources/exports (the `.svg` of the development view is not well-formed XML; the `.png` used by the earlier build contains the black-block raster). |
 | Class diagrams (`Overall System Class Diagram.png`, `Subsystem 1/2/3 …png`, `UC17_class.png`, three timestamp-named `.jpg`), method-description PDFs, `UC04/` | KEEP-LOCAL | Teammates' design inputs; content visible in the published report. |
-| `METHOD_COVERAGE_AUDIT.md`, `QA_REPORT.md`, `report_source_manifest.md`, `Submission3_Group13_LaTeX_BuildKit.zip` | KEEP-LOCAL | Provenance notes and archive. |
+| `METHOD_COVERAGE_AUDIT.md`, `QA_REPORT.md`, `report_source_manifest.md`, `Submission3_Group13_LaTeX_BuildKit.zip` | KEEP-LOCAL | Provenance notes and archive. The Submission #3 report (section 6.3) names `report_source_manifest.md` and `METHOD_COVERAGE_AUDIT.md` as repository documents; publish them only after the team agrees. |
 | `report_builder/out/`, `report_builder/page_previews/`, `report_builder/L03_13.log` | IGNORE | LaTeX intermediates, logs with local paths, preview renders. |
 
 ## 6. Repository root
