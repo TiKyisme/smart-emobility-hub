@@ -43,6 +43,19 @@ The lecturer slides distinguish non-functional requirements as system properties
 - **NFR-04 - Demonstrability:** The MVP shall support the required workflows using simulated/hard-coded data without requiring a backend database.
 - **NFR-05 - UI clarity:** The team shall define a measurable acceptance criterion for whether the main student and operator workflows can be completed through the mockup/MVP. **[TEAM_DECISION: criterion]**.
 
-## C. Requirements intentionally not added
+## C. Alignment with the submitted reports
+
+The FR-01..FR-20 wording above is unchanged. The Submission #1–#3 reports refine how they are realized; the MVP follows the reports ([UC_UI_PDF_SYNC.md](UC_UI_PDF_SYNC.md)):
+
+- **FR-02 / FR-03:** search from a chosen location within a radius of 0.1–5.0 km, then filter by vehicle type and minimum battery (Submission #1 FR-SVU-1/2, Submission #3 `validateLocation`); radius and battery threshold are team parameters (D-022).
+- **FR-04:** the reservation is created only after a confirmation step; exceptions E1–E3 and the TC-UC04-01..11 cases of the Submission #3 appendix apply.
+- **FR-08 / FR-09:** the student's charging request is for a private EV (Submission #1 FR-PEV-2); it books a Hub and a one-hour time slot (Submission #2/#3 UC-09). Shared-vehicle charging is managed by the operator (Submission #1 FR-CHG-1, FR-OPT-15..18) (D-019).
+- **FR-12:** "approaching capacity" uses configurable alert thresholds (Submission #1 FR-OPT-4..6; default 85 %, D-023).
+- **FR-13:** redistribution is ordered by the operator and executed by the Vehicle Dispatch Staff (Submission #1 FR-OPT-7..9, FR-DIS-1..8; D-020).
+- **FR-14:** incidents are classified and either assigned to the Maintenance Staff or handled operationally (Submission #1 FR-OPT-10..14, FR-MNT-1..6; Submission #2 UC-15; D-021).
+- **FR-15:** priority follows Submission #3 ADR-05 and Submission #1 FR-CHG-2: early departure or battery below 20 %, then lower battery, then registration time (D-015).
+- **FR-16..FR-18:** the scenario is configured with target Hub, demand increase, offline ports and time horizon; results can be saved or applied (Submission #2 UC-17; D-024).
+
+## D. Requirements intentionally not added
 
 The source material does not require login, payment, real GPS navigation, a 3D map, cloud infrastructure, or machine-learning prediction. They must not be treated as project requirements unless the lecturer later changes the scope.
